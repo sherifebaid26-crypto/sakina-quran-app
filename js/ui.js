@@ -229,7 +229,7 @@ export function renderChrome() {
       <div class="side-card">
         <div class="side-card-title">Listen mindfully</div>
         <div class="side-card-sub">Quran audio with ambient sound</div>
-        <div class="side-card-ver">v1.6 · ${RECITERS.length} reciters</div>
+        <div class="side-card-ver">v1.7 · ${RECITERS.length} reciters</div>
       </div>
     </div>`;
 
