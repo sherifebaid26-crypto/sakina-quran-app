@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <meta name="theme-color" content="#0d0f14" />
+  <title>Sakina — Quran Audio</title>
+  <meta name="description" content="A calm, premium Quran listening experience — reciters, surahs, reading mode and ambient sound." />
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='16' fill='%2312161d'/%3E%3Ccircle cx='32' cy='32' r='18' fill='none' stroke='%239db8ff' stroke-width='3'/%3E%3Cpath d='M27 23v18l15-9z' fill='%23f4f5f7'/%3E%3C/svg%3E" />
+  <link rel="preload" href="assets/fonts/inter-400.woff2" as="font" type="font/woff2" crossorigin />
+  <link rel="preload" href="assets/fonts/noto-sans-arabic-500.woff2" as="font" type="font/woff2" crossorigin />
+  <link rel="preload" href="assets/fonts/amiri-quran-400.woff2" as="font" type="font/woff2" crossorigin />
+  <link rel="stylesheet" href="css/app.css?v=4" />
+</head>
+<body>
+  <!-- live ambient backdrop: animated visuals that glow through the glass surfaces -->
+  <div id="ambient-visuals" class="ambient-visuals" data-sound="off" aria-hidden="true">
+    <div class="av av-rain"></div>
+    <div class="av av-stormflash"></div>
+    <div class="av av-ocean"></div>
+    <div class="av av-fireglow"></div>
+    <div class="av av-stars"></div>
+    <div class="av av-wind"></div>
+    <div class="av av-forest"></div>
+    <div class="av av-water"></div>
+  </div>
+  <div id="app">
+    <aside id="sidebar" class="sidebar"></aside>
+    <main id="view" class="view"></main>
+    <nav id="mobilenav" class="mobilenav"></nav>
+    <div id="miniplayer" class="miniplayer-host"></div>
+    <div id="expanded" class="expanded-host"></div>
+    <div id="sheets" class="sheets-host"></div>
+    <div id="dropdowns" class="dropdowns-host"></div>
+    <div id="toasts" class="toasts-host"></div>
+  </div>
+  <audio id="audio" preload="auto"></audio>
+  <script type="module" src="js/app.js?v=4"></script>
+</body>
+</html>

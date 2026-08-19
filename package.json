@@ -1,0 +1,10 @@
+{
+  "name": "sakina-quran-app",
+  "version": "1.0.0",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "test": "node tests/verify.mjs",
+    "serve": "node server.mjs"
+  }
+}
