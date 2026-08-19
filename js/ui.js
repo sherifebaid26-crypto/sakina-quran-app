@@ -9,6 +9,7 @@ import {
 } from "./data.js";
 import { AudioEngine, verseTimings } from "./audio.js";
 import { AmbientEngine, AMBIENT_SOUNDS } from "./ambience.js";
+import { OfflineStore } from "./offline.js";
 
 /* ============================ helpers ============================ */
 
@@ -102,6 +103,8 @@ export const App = {
   timingsCache: new Map(),
   activeVerse: 0,
   readingSurahId: null,
+  versesOpen: false,
+  versesShowTranslation: true,
   defaultReciterId: () => {
     const lp = Store.get("lastPlayed", null);
     if (lp && getReciter(lp.reciterId)) return lp.reciterId;
@@ -226,7 +229,7 @@ export function renderChrome() {
       <div class="side-card">
         <div class="side-card-title">Listen mindfully</div>
         <div class="side-card-sub">Quran audio with ambient sound</div>
-        <div class="side-card-ver">v1.4 · ${RECITERS.length} reciters</div>
+        <div class="side-card-ver">v1.6 · ${RECITERS.length} reciters</div>
       </div>
     </div>`;
 
@@ -259,7 +262,7 @@ function miniPlayerHTML() {
       <div class="mini-progress" style="width:${t ? pct : 0}%"></div>
       <div class="mini-art">${t ? avatarImg(reciter, 44) : `<div class="avatar avatar-placeholder" style="width:44px;height:44px"><span>${icon("music", 18)}</span></div>`}</div>
       <div class="mini-meta">
-        <div class="mini-title">${t ? esc(t.surahName) : "Nothing playing"}</div>
+        <div class="mini-title">${t ? esc(t.surahName) : "Nothing playing"}${st.offline ? ` <span class="offline-dot">Offline</span>` : ""}</div>
         <div class="mini-sub">${t ? esc(t.reciterName) : "Choose a surah to begin"}</div>
         ${sleepChip}
       </div>
@@ -293,73 +296,246 @@ export function renderMiniPlayer() {
 
 /* ============================ expanded player ============================ */
 
+const BOLT_SVG = `<svg viewBox="0 0 28 72" fill="none" aria-hidden="true"><path d="M18 1 5 41h8.5L10 71l14-38h-8.5L20 1z" fill="#e9f0ff" opacity=".85"/><path d="M18 1 5 41h8.5L10 71l14-38h-8.5L20 1z" fill="none" stroke="#fff" stroke-width=".6" opacity=".5"/></svg>`;
+
 export function renderExpandedPlayer() {
   const st = App.engine.state;
   const t = st.track;
   const reciter = t ? getReciter(t.reciterId) : null;
-  const set = settings();
   const pct = st.duration ? (st.position / st.duration) * 100 : 0;
   const ambient = App.ambient;
   const bgName = AMBIENT_SOUNDS.find((s) => s.id === ambient.current)?.name || "None";
-
-  const sleepBtn = App.engine.sleep
-    ? `<span class="sleep-dot"></span>` : "";
-
-  const body = `
-    <div class="player-backdrop" data-act="close-expanded"></div>
-    <div class="player-card glass-strong" role="dialog" aria-label="Player">
-      <div class="player-glow"></div>
-      <div class="player-head">
-        ${t ? avatarImg(reciter, 116, "player-art") : `<div class="avatar avatar-placeholder player-art" style="width:116px;height:116px"><span>${icon("music", 34)}</span></div>`}
-        <div class="player-head-meta">
-          <div class="player-title">${t ? esc(t.surahName) : "Nothing playing"}</div>
-          ${t && t.surahNameAr ? `<div class="player-title-ar" dir="rtl">${esc(t.surahNameAr)}</div>` : ""}
-          <div class="player-sub">${t ? esc(t.reciterName) : "Choose a surah to begin"}</div>
-          <button class="icon-btn heart ${isFavSurah(t?.surahId) ? "on" : ""}" data-act="fav-track" title="Favorite">${icon("heart", 20)}</button>
-        </div>
-      </div>
-
-      <div class="player-controls">
-        <button class="ctl-pill" data-act="speed-cycle">${icon("speed", 16)}<span id="speedLabel">${st.speed}x</span></button>
-        <button class="ctl-btn" data-act="prev" title="Previous">${icon("prev", 26)}</button>
-        <button class="ctl-btn ctl-play ${st.buffering ? "buffering" : ""}" data-act="toggle" title="Play / Pause">
-          ${st.buffering ? icon("spinner", 26) : st.playing ? icon("pause", 26) : icon("play", 26)}
-        </button>
-        <button class="ctl-btn" data-act="next" title="Next">${icon("next", 26)}</button>
-        <button class="ctl-pill ${App.engine.sleep ? "active" : ""}" data-act="sleep-sheet">${icon("moon", 16)}<span>Sleep</span>${sleepBtn}</button>
-      </div>
-
-      <div class="player-progress">${progressHTML()}</div>
-
-      <div class="volume-block">
-        <div class="volume-row">
-          <div class="volume-label">${icon("volume", 16)}<span>Quran</span></div>
-          <input type="range" class="slider" min="0" max="1" step="0.01" value="${App.engine.audio.volume}" data-act="qvol" style="--fill:${App.engine.audio.volume * 100}%" aria-label="Quran volume"/>
-        </div>
-        <div class="volume-row">
-          <div class="volume-label">${icon(ambient.current === "off" ? "moonoff" : "droplet", 16)}<span>Background sound</span></div>
-          <input type="range" class="slider" min="0" max="1" step="0.01" value="${ambient.volume}" data-act="bvol" style="--fill:${ambient.volume * 100}%" aria-label="Background volume"/>
-        </div>
-      </div>
-
-      <div class="player-foot">
-        <button class="icon-btn ${st.shuffle ? "on" : ""}" data-act="shuffle" title="Shuffle">${icon("shuffle", 18)}</button>
-        <button class="pill pill-ambient" data-act="ambient-sheet">${icon("waves", 16)}<span>Background sound · ${esc(bgName)}</span>${icon("chevronDown", 14)}</button>
-        <button class="icon-btn ${st.repeat !== "off" ? "on" : ""}" data-act="repeat" title="Repeat">${icon(st.repeat === "one" ? "repeat1" : "repeat", 18)}</button>
-      </div>
-    </div>`;
+  const sleepBtn = App.engine.sleep ? `<span class="sleep-dot"></span>` : "";
 
   const overlay = $("#expanded");
-  overlay.innerHTML = body;
+  overlay.innerHTML = `
+    <div class="player-scene" aria-hidden="true">
+      <div class="ps-sky"></div>
+      <div class="ps-cloud ps-c1"></div>
+      <div class="ps-cloud ps-c2"></div>
+      <div class="ps-cloud ps-c3"></div>
+      <div class="ps-bolt ps-b1">${BOLT_SVG}<div class="ps-glow"></div></div>
+      <div class="ps-bolt ps-b2">${BOLT_SVG}<div class="ps-glow"></div></div>
+      <div class="ps-bolt ps-b3">${BOLT_SVG}<div class="ps-glow"></div></div>
+      <div class="ps-rain"></div>
+      <div class="ps-mist"></div>
+      <div class="ps-vignette"></div>
+    </div>
+    <div class="player-backdrop" data-act="close-expanded"></div>
+    <div class="expanded-stack">
+      <div class="player-card glass-strong player-glass" role="dialog" aria-label="Player">
+        <div class="player-glow"></div>
+        <div class="player-now">Now Playing</div>
+        <div class="player-head">
+          ${t ? avatarImg(reciter, 116, "player-art") : `<div class="avatar avatar-placeholder player-art" style="width:116px;height:116px"><span>${icon("music", 34)}</span></div>`}
+          <div class="player-head-meta">
+            <div class="player-title">${t ? esc(t.surahName) : "Nothing playing"}</div>
+            ${t && t.surahNameAr ? `<div class="player-title-ar" dir="rtl">${esc(t.surahNameAr)}</div>` : ""}
+            <div class="player-sub">${t ? esc(t.reciterName) : "Choose a surah to begin"}</div>
+            <div class="player-head-actions">
+              <button class="icon-btn" data-act="queue-sheet" title="Queue">${icon("queue", 19)}</button>
+              <button class="icon-btn heart ${isFavSurah(t?.surahId) ? "on" : ""}" data-act="fav-track" title="Favorite">${icon("heart", 20)}</button>
+              <button class="icon-btn" data-act="player-more" title="More options">${icon("more", 20)}</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="player-progress">
+          <div class="player-meta-row">
+            <span class="player-surah-chip">${t ? `Surah ${t.surahId}` : ""}${st.offline ? ` · <span class="offline-dot">Offline</span>` : ""}</span>
+            <span class="player-ayah-count">${t && getSurah(t.surahId) ? `${getSurah(t.surahId).ayahs} verses` : ""}</span>
+          </div>
+          ${progressHTML()}
+        </div>
+
+        <div class="player-controls">
+          <button class="ctl-pill" data-act="speed-cycle">${icon("speed", 16)}<span id="speedLabel">${st.speed}x</span></button>
+          <button class="ctl-btn" data-act="prev" title="Previous">${icon("prev", 26)}</button>
+          <button class="ctl-btn ctl-play ${st.buffering ? "buffering" : ""}" data-act="toggle" title="Play / Pause">
+            ${st.buffering ? icon("spinner", 26) : st.playing ? icon("pause", 26) : icon("play", 26)}
+          </button>
+          <button class="ctl-btn" data-act="next" title="Next">${icon("next", 26)}</button>
+          <button class="ctl-pill ${App.engine.sleep ? "active" : ""}" data-act="sleep-sheet">${icon("moon", 16)}<span>Sleep</span>${sleepBtn}</button>
+        </div>
+
+        <div class="volume-block">
+          <div class="volume-row">
+            <div class="volume-label">${icon("volume", 16)}<span>Quran Volume</span></div>
+            <input type="range" class="slider" min="0" max="1" step="0.01" value="${App.engine.audio.volume}" data-act="qvol" style="--fill:${App.engine.audio.volume * 100}%" aria-label="Quran volume"/>
+          </div>
+          <div class="volume-row">
+            <div class="volume-label">${icon(ambient.current === "off" ? "moonoff" : "cloudLightning", 16)}<span>Background Sound</span></div>
+            <input type="range" class="slider" min="0" max="1" step="0.01" value="${ambient.volume}" data-act="bvol" style="--fill:${ambient.volume * 100}%" aria-label="Background volume"/>
+          </div>
+        </div>
+
+        <div class="player-foot">
+          <button class="pill pill-ambient" data-act="ambient-sheet">${icon("waves", 16)}<span id="ambientPillLabel">Background Sound · ${esc(bgName)}</span>${icon("chevronDown", 14)}</button>
+          <button class="pill pill-verses" data-act="toggle-verses">${icon("book", 16)}<span id="versesBtnLabel">Show Verses</span></button>
+        </div>
+      </div>
+
+      <div class="verses-panel glass-strong" id="verses-panel"></div>
+    </div>`;
+
   overlay.classList.add("show");
   document.body.classList.add("no-scroll");
+  if (App.versesOpen) {
+    overlay.classList.add("verses-open");
+    renderVersesPanel();
+  }
 }
 
 export function closeExpanded() {
+  App.versesOpen = false;
   const overlay = $("#expanded");
-  overlay.classList.remove("show");
+  overlay.classList.remove("show", "verses-open");
   overlay.innerHTML = "";
   document.body.classList.remove("no-scroll");
+}
+
+/* ============================ verses panel (player) ============================ */
+
+async function ensureQuranData() {
+  if (App.quranAr && App.quranEn) return true;
+  const preData = window.__SAKINA_DATA__;
+  if (preData) { App.quranAr = preData.ar; App.quranEn = preData.en; return true; }
+  try {
+    const [ar, en] = await Promise.all([
+      fetch("data/quran-ar.json").then((r) => r.json()),
+      fetch("data/quran-en.json").then((r) => r.json()),
+    ]);
+    App.quranAr = ar; App.quranEn = en;
+    return true;
+  } catch { return false; }
+}
+
+async function computeActiveAyah(surahId, time, duration) {
+  const reciterId = App.engine.state.track?.reciterId;
+  if (!reciterId || !surahId) return 1;
+  const timings = await getTimings(reciterId, surahId);
+  if (timings && timings.length) {
+    let active = timings[0].ayah;
+    for (const tt of timings) { if (time >= tt.start) active = tt.ayah; else break; }
+    return active;
+  }
+  if (!duration) return 1;
+  const s = getSurah(surahId);
+  const ar = App.quranAr?.[surahId] || {};
+  if (!s) return 1;
+  let total = 0; const w = [];
+  for (let i = 1; i <= s.ayahs; i++) { const x = (ar[i] || "").length + 1; w.push(x); total += x; }
+  let acc = 0;
+  for (let i = 1; i <= s.ayahs; i++) { acc += w[i - 1] / total; if (time / duration <= acc) return i; }
+  return s.ayahs;
+}
+
+export async function openVerses() {
+  const t = App.engine.state.track;
+  if (!t) return toast("Nothing playing", "info");
+  App.versesOpen = true;
+  const overlay = $("#expanded");
+  if (!overlay) return;
+  overlay.classList.add("verses-open");
+  const lbl = $("#versesBtnLabel");
+  if (lbl) lbl.textContent = "Hide Verses";
+  await renderVersesPanel();
+}
+
+export function closeVerses() {
+  App.versesOpen = false;
+  const overlay = $("#expanded");
+  if (overlay) overlay.classList.remove("verses-open");
+  const lbl = $("#versesBtnLabel");
+  if (lbl) lbl.textContent = "Show Verses";
+}
+
+async function renderVersesPanel() {
+  const panel = $("#verses-panel");
+  if (!panel) return;
+  const t = App.engine.state.track;
+  if (!t) return;
+  const s = getSurah(t.surahId);
+  if (!s) return;
+  const both = App.versesShowTranslation !== false;
+
+  panel.innerHTML = `
+    <div class="pv-head">
+      <div class="pv-head-meta">
+        <div class="pv-surah-ar" dir="rtl">${esc(s.nameAr)}</div>
+        <div class="pv-surah-en">Surah ${s.id} · ${esc(s.name)} — ${esc(t.reciterName)}</div>
+      </div>
+      <div class="pv-toggle">
+        <button class="pv-toggle-btn ${both ? "" : "active"}" data-act="verses-lang" data-mode="ar">Arabic</button>
+        <button class="pv-toggle-btn ${both ? "active" : ""}" data-act="verses-lang" data-mode="both">+ Translation</button>
+      </div>
+      <button class="icon-btn" data-act="close-verses" title="Close">${icon("x", 20)}</button>
+    </div>
+    <div class="pv-list"><span class="empty-inline">Loading verses…</span></div>
+    <div class="pv-mini">
+      <div class="pv-mini-progress" id="pv-mini-progress"></div>
+      <div class="pv-mini-row">
+        ${avatarImg(getReciter(t.reciterId), 40)}
+        <div class="pv-mini-meta">
+          <div class="pv-mini-title">${esc(t.surahName)}</div>
+          <div class="pv-mini-sub">${esc(t.reciterName)}</div>
+        </div>
+        <button class="icon-btn" data-act="prev" title="Previous">${icon("prev", 19)}</button>
+        <button class="icon-btn pv-play" data-act="toggle" title="Play / Pause">${App.engine.state.playing ? icon("pause", 19) : icon("play", 19)}</button>
+        <button class="icon-btn" data-act="next" title="Next">${icon("next", 19)}</button>
+      </div>
+    </div>`;
+
+  const okData = await ensureQuranData();
+  const list = panel.querySelector(".pv-list");
+  if (!list) return;
+  if (!okData) { list.innerHTML = `<div class="empty-inline">Could not load the mushaf text.</div>`; return; }
+
+  const ar = App.quranAr[s.id] || {};
+  const en = App.quranEn[s.id] || {};
+  const fsize = settings().arabicFontSize;
+  let html = "";
+  for (let i = 1; i <= s.ayahs; i++) {
+    if (!ar[i]) continue;
+    html += `
+      <div class="pv-verse" data-ay="${i}" data-act="verse-tap" role="button" tabindex="0">
+        <span class="pv-num">${i}</span>
+        <div class="pv-arabic" dir="rtl" style="font-size:${fsize}px">${ar[i]}</div>
+        ${both && en[i] ? `<div class="pv-translation">${esc(en[i])}</div>` : ""}
+      </div>`;
+  }
+  list.innerHTML = html;
+  refreshVersesMini();
+  await syncPlayerVerses(true);
+}
+
+async function syncPlayerVerses(forceScroll = false) {
+  const panel = $("#verses-panel");
+  if (!panel || !App.versesOpen) return;
+  const st = App.engine.state;
+  const t = st.track;
+  if (!t) return;
+  const ay = await computeActiveAyah(t.surahId, st.position || 0, st.duration || 0);
+  const prev = panel.querySelector(".pv-verse.active");
+  if (prev && Number(prev.dataset.ay) === ay) return;
+  panel.querySelectorAll(".pv-verse").forEach((v) => v.classList.toggle("active", Number(v.dataset.ay) === ay));
+  const el = panel.querySelector(`.pv-verse[data-ay="${ay}"]`);
+  if (el) {
+    const list = panel.querySelector(".pv-list");
+    if (!list) return;
+    const target = el.offsetTop - list.clientHeight / 2 + el.clientHeight / 2;
+    list.scrollTo({ top: Math.max(0, target), behavior: forceScroll ? "auto" : "smooth" });
+  }
+}
+
+function refreshVersesMini() {
+  const panel = $("#verses-panel");
+  if (!panel) return;
+  const st = App.engine.state;
+  const play = panel.querySelector('.pv-mini [data-act="toggle"]');
+  if (play) play.innerHTML = st.playing ? icon("pause", 19) : icon("play", 19);
+  const prog = panel.querySelector("#pv-mini-progress");
+  if (prog && st.duration) prog.style.width = Math.min(100, (st.position / st.duration) * 100) + "%";
 }
 
 /* ============================ sheets ============================ */
@@ -555,7 +731,8 @@ const Actions = {
     App.ambient.start(id);
     $$(".ambient-tile").forEach((t) => t.classList.toggle("active", t.dataset.id === id));
     updateAmbientVisuals(id);
-    syncExpanded();
+    const lbl = $("#ambientPillLabel");
+    if (lbl) lbl.textContent = "Background Sound · " + (AMBIENT_SOUNDS.find((s) => s.id === id)?.name || "None");
   },
   "fav-track"() {
     const t = App.engine.state.track;
@@ -582,7 +759,7 @@ const Actions = {
     closeDropdown();
     playlistPickerSheet(buildTrack(d.rid, Number(d.sid)));
   },
-  "menu-download"(el) { downloadTrack(el.dataset); },
+  "menu-download"(el) { downloadOffline(el.dataset.rid, Number(el.dataset.sid)); },
   "menu-share"(el) {
     const d = el.dataset;
     const s = getSurah(Number(d.sid));
@@ -608,7 +785,7 @@ const Actions = {
     render();
     toast(isFavReciter(d.rid) ? "Reciter added to favorites" : "Reciter removed from favorites");
   },
-  "download"(el) { downloadTrack(el.dataset); },
+  "download"(el) { downloadOffline(el.dataset.rid, Number(el.dataset.sid)); },
   "read-surah"(el) {
     const d = el.dataset;
     navigate(`read/${d.sid}?rec=${d.rid}`);
@@ -699,7 +876,27 @@ const Actions = {
       location.reload();
     }
   },
-  "ambient-off"() { App.ambient.start("off"); updateAmbientVisuals("off"); syncExpanded(); },
+  "ambient-off"() { App.ambient.start("off"); updateAmbientVisuals("off"); },
+  "show-verses"() { openVerses(); },
+  "toggle-verses"() {
+    if (App.versesOpen) closeVerses(); else openVerses();
+  },
+  "close-verses"() { closeVerses(); },
+  "verses-lang"(el) {
+    App.versesShowTranslation = el.dataset.mode === "both";
+    renderVersesPanel();
+  },
+  "player-more"(el) {
+    const t = App.engine.state.track;
+    if (!t) return;
+    const rect = el.getBoundingClientRect();
+    openDropdown([
+      { act: "sleep-sheet", icon: "moon", label: "Sleep timer" },
+      { act: "queue-sheet", icon: "queue", label: "Up next" },
+      { act: "menu-download", icon: "download", label: "Download", data: `data-rid="${t.reciterId}" data-sid="${t.surahId}"` },
+      { act: "menu-share", icon: "share", label: "Share", data: `data-sid="${t.surahId}"` },
+    ], rect.right - 200, rect.bottom + 6);
+  },
 };
 
 /* ---------- live ambient backdrop ---------- */
@@ -920,7 +1117,8 @@ function bindReciter(id) {
   const list = $("#surah-list");
   const reciter = getReciter(id);
   if (!input || !list || !reciter) return;
-  const apply = () => { list.innerHTML = surahRows(reciter, input.value); };
+  const apply = () => { list.innerHTML = surahRows(reciter, input.value); decorateOfflineRows(list); };
+  decorateOfflineRows(list);
   input.addEventListener("input", apply);
   $("#surah-search-clear")?.addEventListener("click", () => { input.value = ""; $("#surah-search-clear").hidden = true; apply(); });
   input.addEventListener("keyup", () => { $("#surah-search-clear").hidden = !input.value; });
@@ -989,17 +1187,9 @@ function readingPlayerHTML() {
 async function renderVerses(surahId) {
   const host = $("#verses");
   if (!host) return;
-  if (!App.quranAr) {
-    try {
-      const [ar, en] = await Promise.all([
-        fetch("data/quran-ar.json").then((r) => r.json()),
-        fetch("data/quran-en.json").then((r) => r.json()),
-      ]);
-      App.quranAr = ar; App.quranEn = en;
-    } catch {
-      host.innerHTML = `<div class="empty">Could not load the mushaf text. Check your connection.</div>`;
-      return;
-    }
+  if (!(await ensureQuranData())) {
+    host.innerHTML = `<div class="empty">Could not load the mushaf text. Check your connection.</div>`;
+    return;
   }
   const s = getSurah(Number(surahId));
   const set = settings();
@@ -1037,37 +1227,7 @@ async function syncVerseWithTime() {
   if (!host || !st.track) return;
   const surahId = App.readingSurahId;
   if (!surahId) return;
-
-  let timings = App.timingsCache.get(`${st.track.reciterId}:${surahId}`);
-  if (timings === undefined) {
-    timings = await verseTimings(st.track.reciterId, surahId);
-    App.timingsCache.set(`${st.track.reciterId}:${surahId}`, timings);
-  }
-
-  const s = getSurah(surahId);
-  const ayahCount = s.ayahs;
-  const time = st.position || 0;
-  const duration = st.duration || 0;
-
-  let active = 1;
-  if (timings) {
-    let last = timings[0]?.start || 0;
-    for (const t of timings) {
-      if (time >= t.start) { active = t.ayah; last = t.start; } else break;
-    }
-    // after the last timestamp, keep the final ayah active
-  } else if (duration > 0) {
-    const ar = App.quranAr?.[surahId] || {};
-    const weights = [];
-    let total = 0;
-    for (let i = 1; i <= ayahCount; i++) { const w = (ar[i] || "").length + 1; weights.push(w); total += w; }
-    let acc = 0;
-    for (let i = 1; i <= ayahCount; i++) {
-      acc += weights[i - 1] / total;
-      if (time / duration <= acc) { active = i; break; }
-    }
-  }
-
+  const active = await computeActiveAyah(surahId, st.position || 0, st.duration || 0);
   if (active !== App.activeVerse) {
     App.activeVerse = active;
     $$(".verse").forEach((v) => v.classList.toggle("verse-active", Number(v.dataset.ay) === active));
@@ -1077,9 +1237,10 @@ async function syncVerseWithTime() {
 
 async function seekToVerse(ayah) {
   const st = App.engine.state;
-  const surahId = App.readingSurahId;
+  let surahId = App.readingSurahId;
+  let reciterId = st.track ? st.track.reciterId : App.defaultReciterId();
+  if (App.versesOpen && st.track) { surahId = st.track.surahId; reciterId = st.track.reciterId; }
   if (!surahId) return;
-  const reciterId = st.track ? st.track.reciterId : App.defaultReciterId();
 
   // If the reader is open on a different surah than the one playing,
   // switch the player to the surah being read (explicit surahId mapping),
@@ -1417,16 +1578,61 @@ export function toggleFavReciter(id) {
 
 /* ============================ download ============================ */
 
-function downloadTrack(d) {
-  const t = buildTrack(d.rid, Number(d.sid));
+let _downloading = new Set();
+
+async function downloadOffline(reciterId, surahId) {
+  const t = buildTrack(reciterId, surahId);
   if (!t) return toast("Recording unavailable", "err");
-  const a = document.createElement("a");
-  a.href = t.audioUrl;
-  a.download = `${String(t.surahId).padStart(3, "0")}-${t.surahName}-${t.reciterName}.mp3`;
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-  toast(`Downloading ${t.surahName}…`);
+  if (!isOfflineSupported()) return toast("This browser does not support offline storage", "err");
+  const key = `${reciterId}:${surahId}`;
+  if (_downloading.has(key)) return;
+  const existing = await OfflineStore.get(reciterId, surahId);
+  if (existing) {
+    await OfflineStore.remove(reciterId, surahId);
+    toast(`Removed ${t.surahName} from offline`, "info");
+    render();
+    return;
+  }
+  _downloading.add(key);
+  toast(`Downloading ${t.surahName}… 0%`, "info");
+  const okSaved = await OfflineStore.downloadTrack(t, (p) => {
+    const pct = Math.round(p * 100);
+    const toasts = document.querySelectorAll(".toast");
+    const el = toasts[toasts.length - 1]?.querySelector("div");
+    if (el) el.textContent = `Downloading ${t.surahName}… ${pct}%`;
+  });
+  _downloading.delete(key);
+  if (okSaved) {
+    toast(`${t.surahName} saved — plays offline`);
+    render();
+  } else {
+    toast("Download failed — check connection", "err");
+  }
+}
+
+function isOfflineSupported() {
+  return typeof indexedDB !== "undefined";
+}
+
+/** mark rows of stored tracks with an offline badge */
+export async function decorateOfflineRows(root) {
+  const rows = (root || document).querySelectorAll("[data-rid][data-sid]");
+  if (!rows.length) return;
+  const stored = await OfflineStore.list();
+  const keys = new Set(stored.map((s) => `${s.meta?.reciterName ? "" : ""}${s.key}`));
+  rows.forEach((r) => {
+    const k = `${r.dataset.rid}:${r.dataset.sid}`;
+    let badge = r.querySelector(".offline-badge");
+    if (keys.has(k)) {
+      if (!badge) {
+        badge = document.createElement("span");
+        badge.className = "offline-badge";
+        badge.title = "Available offline";
+        badge.textContent = "●";
+        (r.querySelector(".surah-actions") || r).appendChild(badge);
+      }
+    } else if (badge) badge.remove();
+  });
 }
 
 /* ============================ engine sync (events → UI) ============================ */
@@ -1444,6 +1650,7 @@ export function wireEngineEvents() {
     App.activeVerse = 0;
     renderMiniPlayer();
     syncExpanded();
+    if (App.versesOpen) renderVersesPanel();
     if (App.route.name === "read") {
       App.activeVerse = 0;
       renderVerses(App.readingSurahId).then(() => syncVerseWithTime());
@@ -1470,6 +1677,7 @@ export function wireEngineEvents() {
       }
     }
     if (App.route.name === "read") syncVerseWithTime();
+    if (App.versesOpen) { syncPlayerVerses(false); refreshVersesMini(); }
     // mini progress
     const mp = $(".mini-progress");
     if (mp && st.track) mp.style.width = pct + "%";
@@ -1536,9 +1744,10 @@ export function wireGlobalEvents() {
     } else if (ev.code === "ArrowLeft" && !ev.shiftKey) {
       App.engine.prev();
     } else if (ev.code === "Escape") {
-      closeExpanded();
-      closeSheets();
-      closeDropdown();
+      if (App.versesOpen) closeVerses();
+      else if ($$(".sheet-wrap.open").length) closeSheets();
+      else if ($("#dropdowns").children.length) closeDropdown();
+      else closeExpanded();
     }
   });
 

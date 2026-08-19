@@ -6,15 +6,15 @@
    ============================================================ */
 
 export const AMBIENT_SOUNDS = [
-  { id: "off",     name: "None",          nameAr: "بدون",       icon: "moon-off" },
+  { id: "storm",   name: "Thunder",       nameAr: "عاصفة رعدية", icon: "cloud-lightning" },
   { id: "rain",    name: "Rain",          nameAr: "مطر",        icon: "cloud-rain" },
-  { id: "storm",   name: "Thunderstorm",  nameAr: "عاصفة رعدية", icon: "cloud-lightning" },
+  { id: "ocean",   name: "Ocean",         nameAr: "محيط",       icon: "waves" },
+  { id: "wind",    name: "Wind",          nameAr: "رياح",       icon: "wind" },
+  { id: "fire",    name: "Fireplace",     nameAr: "موقد",       icon: "flame" },
   { id: "water",   name: "Water",         nameAr: "ماء",        icon: "droplet" },
   { id: "forest",  name: "Forest",        nameAr: "غابة",       icon: "tree" },
-  { id: "wind",    name: "Wind",          nameAr: "رياح",       icon: "wind" },
-  { id: "ocean",   name: "Ocean",         nameAr: "محيط",       icon: "waves" },
-  { id: "fire",    name: "Fireplace",     nameAr: "موقد",       icon: "flame" },
   { id: "night",   name: "Night",         nameAr: "ليل هادئ",   icon: "moon" },
+  { id: "off",     name: "None",          nameAr: "بدون",       icon: "moon-off" },
 ];
 
 export class AmbientEngine {

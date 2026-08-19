@@ -46,7 +46,20 @@ or hotlinked. Tests assert every photo file exists, is unique (MD5), and is neve
 - **Saud Al Jumah**: no structured full-mushaf source exists anywhere (only live/YouTube recordings).
   Per your own rule, his profile shows the truth — no audio is mislabeled with another reciter's voice.
 
-### 3 · Glassmorphism player (matches the reference)
+### 3 · Glassmorphism player — cinematic storm edition (matches the reference)
+- **Storm environment**: the expanded player floats inside a dark cinematic storm — three
+  drifting cloud layers, three staggered lightning bolts with soft white-blue glow (subtle,
+  slow flashes that never fight the UI), faint rain streaks, drifting mist and a vignette.
+  Pure CSS — no images, GPU-friendly.
+- **Verses panel**: the "Show Verses" glass button slides a frosted panel up over the player
+  (bottom-sheet on mobile). It shows the current surah's verses with Arabic (Amiri Quran) +
+  Saheeh International translation, an Arabic/Translation toggle, and the **active verse
+  follows the audio in real time** (highlighted glass card + glow + auto-scroll). Tapping a
+  verse seeks the recitation. A compact glass mini-player (reciter photo, prev/play/next,
+  progress) stays docked while reading.
+- **Smart Escape**: closes layers one at a time — verses panel → sheets → dropdowns → player.
+
+### 3b · Glassmorphism player (core, as before)
 - Mini player: floating translucent glass pill — `blur(24px) saturate(160%)`, gradient translucent
   surface, hairline border, inner highlight, soft shadow, progress hairline.
 - Expanded player: floating frosted panel over a **darkened, blurred backdrop** (the app stays

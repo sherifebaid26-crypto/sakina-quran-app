@@ -9,14 +9,21 @@ import { App, render, renderChrome, wireEngineEvents, wireGlobalEvents, toast, r
 import { RECITERS, validateTrack } from "./data.js";
 
 async function boot() {
-  // 1. surah metadata
+  // 1. surah metadata (works from the single-file build too)
   let surahs;
-  try {
-    const res = await fetch("data/surahs.json");
-    surahs = await res.json();
-  } catch {
-    document.getElementById("view").innerHTML = `<div class="empty">Could not load the app data.</div>`;
-    return;
+  const preData = window.__SAKINA_DATA__;
+  if (preData) {
+    surahs = preData.surahs;
+    App.quranAr = preData.ar;
+    App.quranEn = preData.en;
+  } else {
+    try {
+      const res = await fetch("data/surahs.json");
+      surahs = await res.json();
+    } catch {
+      document.getElementById("view").innerHTML = `<div class="empty">Could not load the app data.</div>`;
+      return;
+    }
   }
   loadSurahs(surahs);
 

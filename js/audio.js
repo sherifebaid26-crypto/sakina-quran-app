@@ -9,6 +9,7 @@
    ============================================================ */
 
 import { validateTrack, Store, getReciter, getSurah } from "./data.js";
+import { OfflineStore } from "./offline.js";
 
 export const REPEAT = { OFF: "off", ALL: "all", ONE: "one" };
 
@@ -105,7 +106,7 @@ export class AudioEngine {
 
   /* ---------- loading a track (the strict sequence) ---------- */
 
-  loadTrack(track, { autoplay = true, position = 0, queue = null } = {}) {
+  async loadTrack(track, { autoplay = true, position = 0, queue = null } = {}) {
     const problems = validateTrack(track);
     if (problems.length) {
       console.error("[engine] refusing invalid track", problems, track);
@@ -138,8 +139,17 @@ export class AudioEngine {
       this.state.queueIndex = 0;
     }
 
-    // 4. set the new source
-    a.src = track.audioUrl;
+    // 4. set the new source — prefer an offline copy when available
+    const offline = await OfflineStore.get(track.reciterId, track.surahId);
+    if (offline && offline.blob) {
+      if (this._objURL) { try { URL.revokeObjectURL(this._objURL); } catch {} }
+      this._objURL = URL.createObjectURL(offline.blob);
+      a.src = this._objURL;
+      this.state.offline = true;
+    } else {
+      a.src = track.audioUrl;
+      this.state.offline = false;
+    }
     a.playbackRate = this.state.speed;
 
     // 5. reset position to the requested point (default 0 — never carry over the previous surah's position)
