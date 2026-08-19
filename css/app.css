@@ -1451,3 +1451,25 @@ svg.ic { flex: none; display: block; }
   font-size: 10px; color: #7fd8a8; letter-spacing: .3px;
 }
 .offline-dot::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: #7fd8a8; box-shadow: 0 0 8px rgba(127,216,168,.8); }
+
+/* ---------- RTL (Arabic UI) ---------- */
+html[dir="rtl"] .sidebar { left: auto; right: 0; border-right: none; border-left: 1px solid var(--border-soft); }
+html[dir="rtl"] .view { margin-left: 0; margin-right: var(--sidebar-w); }
+html[dir="rtl"] .back-btn svg, html[dir="rtl"] .chip-card svg { transform: scaleX(-1); }
+html[dir="rtl"] .brand-name { text-align: right; }
+html[dir="rtl"] .text-btn { direction: ltr; }
+html[dir="rtl"] .player-now::before { margin-left: 8px; }
+html[dir="rtl"] .queue-row, html[dir="rtl"] .dropdown-item, html[dir="rtl"] .sheet-row { text-align: right; }
+html[dir="rtl"] .recent-row svg, html[dir="rtl"] .queue-row svg { transform: scaleX(-1); }
+html[dir="rtl"] .surah-row .surah-badge { order: 3; }
+html[dir="rtl"] .mini-title, html[dir="rtl"] .mini-sub { text-align: right; }
+html[dir="rtl"] .home-head .icon-btn { margin-inline-start: auto; }
+html[dir="rtl"] .continue-card { text-align: right; }
+@media (max-width: 980px) {
+  html[dir="rtl"] .view { margin-right: 0; }
+}
+
+/* ---------- unavailable surah rows ---------- */
+.surah-row.unavailable { opacity: .45; cursor: default; }
+.surah-row.unavailable:hover { transform: none; background: rgba(255,255,255,0.035); border-color: var(--border-soft); box-shadow: none; }
+.surah-row.unavailable .surah-badge { background: rgba(255,255,255,0.04); color: var(--text-faint); }

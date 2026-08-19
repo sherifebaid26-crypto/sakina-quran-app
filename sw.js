@@ -5,7 +5,7 @@
    - Never intercepts cross-origin audio (pass-through)
    ============================================================ */
 
-const CACHE = "sakina-v1.7";
+const CACHE = "sakina-v1.8";
 
 const SHELL = [
   "./",
@@ -55,7 +55,13 @@ const SHELL = [
   "./assets/audio/008-abdulbasit.mp3",
   "./assets/audio/009-shatri.mp3",
   "./assets/audio/010-dosari.mp3",
-  "./assets/audio/011-kamil.mp3",
+  "./assets/reciters/mohamedahmedhassan.jpg",
+  "./assets/reciters/islamsobhi.jpg",
+  "./assets/reciters/abdulrahmanmusad.jpg",
+  "./assets/reciters/moazsyam.jpg",
+  "./assets/audio/012-mohamedahmedhassan.mp3",
+  "./assets/audio/013-islamsobhi.mp3",
+  "./assets/audio/014-moazsyam.mp3",
 ];
 
 self.addEventListener("install", (ev) => {

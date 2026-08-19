@@ -148,7 +148,7 @@ export class AudioEngine {
       this.state.offline = true;
     } else {
       a.src = track.audioUrl;
-      this.state.offline = false;
+      this.state.offline = !!track.local;
     }
     a.playbackRate = this.state.speed;
 

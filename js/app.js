@@ -6,6 +6,8 @@ import { loadSurahs, Store, getReciter, getSurah, buildTrack } from "./data.js";
 import { AudioEngine } from "./audio.js";
 import { AmbientEngine } from "./ambience.js";
 import { App, render, renderChrome, wireEngineEvents, wireGlobalEvents, toast, renderMiniPlayer, navigate } from "./ui.js";
+import { setLang } from "./i18n.js";
+import { t } from "./i18n.js";
 import { RECITERS, validateTrack } from "./data.js";
 
 async function boot() {
@@ -39,6 +41,9 @@ async function boot() {
 
   // accent
   document.documentElement.dataset.accent = set.accent || "sapphire";
+
+  // language (must run before first renderChrome/render)
+  setLang(set.lang || "en");
 
   // 3. chrome + routing
   renderChrome();
@@ -74,7 +79,7 @@ async function boot() {
 
   setTimeout(() => {
     if (Store.get("_greeted") !== true) {
-      toast("Welcome to Sakina — choose a reciter to begin");
+      toast(t("toast.welcome"));
       Store.set("_greeted", true);
     }
   }, 700);
@@ -90,6 +95,10 @@ function runSelfCheck() {
       }
       const t1 = buildTrack(r.id, 1);
       const t2 = buildTrack(r.id, 2);
+      if (!t1 || !t2) {
+        lines.push(`· ${r.name}: partial mushaf — unavailable surahs rejected correctly`);
+        continue;
+      }
       const p1 = validateTrack(t1);
       const p2 = validateTrack(t2);
       const ok = !p1.length && !p2.length;

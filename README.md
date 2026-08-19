@@ -4,6 +4,12 @@ A calm, cinematic, glassmorphism Quran listening app. Dark charcoal surfaces, fr
 real reciter photographs, explicit surah-ID audio mapping, reading mode with live verse highlighting,
 and independent Quran + ambient volume mixing.
 
+## v1.8 — what's new
+- **4 new reciters**: Mohamed Ahmed Hassan (25 surahs), Islam Sobhi (109), Abdulrahman Mosaad (12 selected), Moaz Syam (32 selected) — all with authentic photos, verified sources, and honest "Unavailable" states for missing surahs (never mislabeled audio)
+- **Arabic UI**: full interface translation (الواجهة كاملة بالعربية) with RTL layout, Arabic reciter names/bios/locations — switchable from Settings
+- **Verse-sync fix**: active verse now follows the actual voice with pause-aware timing (no more highlighting ahead of the recitation)
+- **Overlay hygiene**: navigating routes always closes sheets/dropdowns
+
 ## The three fixes (as requested)
 
 ### 1 · Real, authentic reciter photographs
@@ -23,6 +29,10 @@ portraits, no reused files:
 | Abu Bakr Al-Shatri | Assabile.com reciter photo album (full-size) |
 | Yasser Al-Dosari | Wikipedia (Yasser Al-Dosari.jpg) |
 | Abdullah Kamil | Al Jazeera news photo (death coverage, 2023) |
+| Mohamed Ahmed Hassan | Elbalad.news news photo |
+| Islam Sobhi | Alsear.com portrait |
+| Abdulrahman Mosaad | Qabilaa.com portrait |
+| Moaz Syam | Archive.org video thumbnail |
 | Saud Al Jumah | **No verifiable photo — neutral monogram placeholder**, per the "never fake it" rule |
 
 Images are **local, stable assets** (`assets/reciters/*.jpg`, 512×512, ~30–70 KB each) — never random

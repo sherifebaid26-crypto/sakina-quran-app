@@ -10,6 +10,8 @@ import {
 import { AudioEngine, verseTimings } from "./audio.js";
 import { AmbientEngine, AMBIENT_SOUNDS } from "./ambience.js";
 import { OfflineStore } from "./offline.js";
+import { t, setLang, getLang, fmtWeekday } from "./i18n.js";
+import { availableSurahCount, audioUrlFor, localFatihahFor } from "./data.js";
 
 /* ============================ helpers ============================ */
 
@@ -27,11 +29,11 @@ export function fmtTime(s) {
 function timeAgo(ts) {
   const d = Date.now() - ts;
   const m = Math.floor(d / 60000);
-  if (m < 1) return "just now";
-  if (m < 60) return `${m}m ago`;
+  if (m < 1) return t("home.justnow");
+  if (m < 60) return t("home.minago", { m });
   const h = Math.floor(m / 60);
-  if (h < 24) return `${h}h ago`;
-  return `${Math.floor(h / 24)}d ago`;
+  if (h < 24) return t("home.hourago", { h });
+  return t("home.dayago", { d: Math.floor(h / 24) });
 }
 
 const ICON_PATHS = {
@@ -170,6 +172,10 @@ export function render() {
   const r = App.route;
   const view = $("#view");
   if (!view) return;
+  // navigating to another route must never leave overlays behind
+  closeSheets();
+  closeDropdown();
+  if (r.name !== "read") App.versesOpen = false;
   view.classList.remove("page-enter");
   void view.offsetWidth;
   view.classList.add("page-enter");
@@ -207,12 +213,12 @@ function afterRender(r) {
 /* ============================ navigation chrome ============================ */
 
 const NAV_ITEMS = [
-  { id: "home", label: "Home", icon: "home" },
-  { id: "search", label: "Search", icon: "search" },
-  { id: "reciters", label: "Reciters", icon: "users" },
-  { id: "playlists", label: "Playlists", icon: "library" },
-  { id: "favorites", label: "Favorites", icon: "heart" },
-  { id: "settings", label: "Settings", icon: "gear" },
+  { id: "home", labelKey: "nav.home", icon: "home" },
+  { id: "search", labelKey: "nav.search", icon: "search" },
+  { id: "reciters", labelKey: "nav.reciters", icon: "users" },
+  { id: "playlists", labelKey: "nav.playlists", icon: "library" },
+  { id: "favorites", labelKey: "nav.favorites", icon: "heart" },
+  { id: "settings", labelKey: "nav.settings", icon: "gear" },
 ];
 
 export function renderChrome() {
@@ -223,19 +229,19 @@ export function renderChrome() {
       <div class="brand-name">${APP_NAME}</div>
     </div>
     <nav class="side-nav">${NAV_ITEMS.map((n) => `
-      <button class="nav-item" data-act="nav" data-nav="${n.id}">${icon(n.icon, 19)}<span>${n.label}</span></button>`).join("")}
+      <button class="nav-item" data-act="nav" data-nav="${n.id}">${icon(n.icon, 19)}<span>${t(n.labelKey)}</span></button>`).join("")}
     </nav>
     <div class="side-foot">
       <div class="side-card">
-        <div class="side-card-title">Listen mindfully</div>
-        <div class="side-card-sub">Quran audio with ambient sound</div>
-        <div class="side-card-ver">v1.7 · ${RECITERS.length} reciters</div>
+        <div class="side-card-title">${t("side.title")}</div>
+        <div class="side-card-sub">${t("side.sub")}</div>
+        <div class="side-card-ver">${t("side.ver", { n: RECITERS.length })}</div>
       </div>
     </div>`;
 
   const bottom = $("#mobilenav");
   bottom.innerHTML = NAV_ITEMS.map((n) => `
-    <button class="mnav-item" data-act="nav" data-nav="${n.id}" aria-label="${n.label}">${icon(n.icon, 21)}<span>${n.label}</span></button>`).join("");
+    <button class="mnav-item" data-act="nav" data-nav="${n.id}" aria-label="${t(n.labelKey)}">${icon(n.icon, 21)}<span>${t(n.labelKey)}</span></button>`).join("");
 
   renderMiniPlayer();
 }
@@ -251,29 +257,29 @@ function updateNav() {
 
 function miniPlayerHTML() {
   const st = App.engine.state;
-  const t = st.track;
-  const reciter = t ? getReciter(t.reciterId) : null;
+  const tr = st.track;
+  const reciter = tr ? getReciter(tr.reciterId) : null;
   const pct = st.duration ? (st.position / st.duration) * 100 : 0;
   const repeatIcon = st.repeat === "one" ? "repeat1" : "repeat";
   const sleepChip = App.engine.sleep
     ? `<span class="mini-sleep">${icon("moon", 12)}${sleepLabel()}</span>` : "";
   return `
-    <div class="mini-player ${t ? "mini-visible" : ""}" data-act="expand-player" role="button" tabindex="0" aria-label="Open player">
-      <div class="mini-progress" style="width:${t ? pct : 0}%"></div>
-      <div class="mini-art">${t ? avatarImg(reciter, 44) : `<div class="avatar avatar-placeholder" style="width:44px;height:44px"><span>${icon("music", 18)}</span></div>`}</div>
+    <div class="mini-player ${tr ? "mini-visible" : ""}" data-act="expand-player" role="button" tabindex="0" aria-label="Open player">
+      <div class="mini-progress" style="width:${tr ? pct : 0}%"></div>
+      <div class="mini-art">${tr ? avatarImg(reciter, 44) : `<div class="avatar avatar-placeholder" style="width:44px;height:44px"><span>${icon("music", 18)}</span></div>`}</div>
       <div class="mini-meta">
-        <div class="mini-title">${t ? esc(t.surahName) : "Nothing playing"}${st.offline ? ` <span class="offline-dot">Offline</span>` : ""}</div>
-        <div class="mini-sub">${t ? esc(t.reciterName) : "Choose a surah to begin"}</div>
+        <div class="mini-title">${tr ? esc(tr.surahName) : esc(t("pl.nothing"))}${st.offline ? ` <span class="offline-dot">${t("pl.offline")}</span>` : ""}</div>
+        <div class="mini-sub">${tr ? esc(recName(getReciter(tr.reciterId))) : t("pl.choose")}</div>
         ${sleepChip}
       </div>
       <div class="mini-controls" >
-        <button class="icon-btn ${st.shuffle ? "on" : ""}" data-act="shuffle" title="Shuffle">${icon("shuffle", 18)}</button>
-        <button class="icon-btn" data-act="prev" title="Previous">${icon("prev", 20)}</button>
-        <button class="icon-btn play" data-act="toggle" title="Play / Pause">${st.playing ? icon("pause", 20) : icon("play", 20)}</button>
-        <button class="icon-btn" data-act="next" title="Next">${icon("next", 20)}</button>
-        <button class="icon-btn ${st.repeat !== "off" ? "on" : ""}" data-act="repeat" title="Repeat">${icon(repeatIcon, 18)}</button>
-        <button class="icon-btn" data-act="queue-sheet" title="Queue">${icon("queue", 18)}</button>
-        <button class="icon-btn" data-act="mini-more" title="More">${icon("more", 18)}</button>
+        <button class="icon-btn ${st.shuffle ? "on" : ""}" data-act="shuffle" title="${t("pl.shuffle")}">${icon("shuffle", 18)}</button>
+        <button class="icon-btn" data-act="prev" title="${t("pl.prev")}">${icon("prev", 20)}</button>
+        <button class="icon-btn play" data-act="toggle" title="${t("pl.toggle")}">${st.playing ? icon("pause", 20) : icon("play", 20)}</button>
+        <button class="icon-btn" data-act="next" title="${t("pl.next")}">${icon("next", 20)}</button>
+        <button class="icon-btn ${st.repeat !== "off" ? "on" : ""}" data-act="repeat" title="${t("pl.repeat")}">${icon(repeatIcon, 18)}</button>
+        <button class="icon-btn" data-act="queue-sheet" title="${t("pl.queue")}">${icon("queue", 18)}</button>
+        <button class="icon-btn" data-act="mini-more" title="${t("pl.more")}">${icon("more", 18)}</button>
       </div>
     </div>`;
 }
@@ -300,8 +306,8 @@ const BOLT_SVG = `<svg viewBox="0 0 28 72" fill="none" aria-hidden="true"><path 
 
 export function renderExpandedPlayer() {
   const st = App.engine.state;
-  const t = st.track;
-  const reciter = t ? getReciter(t.reciterId) : null;
+  const tr = st.track;
+  const reciter = tr ? getReciter(tr.reciterId) : null;
   const pct = st.duration ? (st.position / st.duration) * 100 : 0;
   const ambient = App.ambient;
   const bgName = AMBIENT_SOUNDS.find((s) => s.id === ambient.current)?.name || "None";
@@ -325,53 +331,53 @@ export function renderExpandedPlayer() {
     <div class="expanded-stack">
       <div class="player-card glass-strong player-glass" role="dialog" aria-label="Player">
         <div class="player-glow"></div>
-        <div class="player-now">Now Playing</div>
+        <div class="player-now">${t("pl.now")}</div>
         <div class="player-head">
-          ${t ? avatarImg(reciter, 116, "player-art") : `<div class="avatar avatar-placeholder player-art" style="width:116px;height:116px"><span>${icon("music", 34)}</span></div>`}
+          ${tr ? avatarImg(reciter, 116, "player-art") : `<div class="avatar avatar-placeholder player-art" style="width:116px;height:116px"><span>${icon("music", 34)}</span></div>`}
           <div class="player-head-meta">
-            <div class="player-title">${t ? esc(t.surahName) : "Nothing playing"}</div>
-            ${t && t.surahNameAr ? `<div class="player-title-ar" dir="rtl">${esc(t.surahNameAr)}</div>` : ""}
-            <div class="player-sub">${t ? esc(t.reciterName) : "Choose a surah to begin"}</div>
+            <div class="player-title">${tr ? esc(tr.surahName) : esc(t("pl.nothing"))}</div>
+            ${t && tr.surahNameAr ? `<div class="player-title-ar" dir="rtl">${esc(tr.surahNameAr)}</div>` : ""}
+            <div class="player-sub">${tr ? esc(recName(getReciter(tr.reciterId))) : t("pl.choose")}</div>
             <div class="player-head-actions">
               <button class="icon-btn" data-act="queue-sheet" title="Queue">${icon("queue", 19)}</button>
-              <button class="icon-btn heart ${isFavSurah(t?.surahId) ? "on" : ""}" data-act="fav-track" title="Favorite">${icon("heart", 20)}</button>
-              <button class="icon-btn" data-act="player-more" title="More options">${icon("more", 20)}</button>
+              <button class="icon-btn heart ${isFavSurah(t?.surahId) ? "on" : ""}" data-act="fav-track" title="${t("fav.added")}">${icon("heart", 20)}</button>
+              <button class="icon-btn" data-act="player-more" title="${t("pl.more")}">${icon("more", 20)}</button>
             </div>
           </div>
         </div>
 
         <div class="player-progress">
           <div class="player-meta-row">
-            <span class="player-surah-chip">${t ? `Surah ${t.surahId}` : ""}${st.offline ? ` · <span class="offline-dot">Offline</span>` : ""}</span>
-            <span class="player-ayah-count">${t && getSurah(t.surahId) ? `${getSurah(t.surahId).ayahs} verses` : ""}</span>
+            <span class="player-surah-chip">${tr ? t("pl.surahChip", { n: tr.surahId }) : ""}${st.offline ? ` · <span class="offline-dot">${t("pl.offline")}</span>` : ""}</span>
+            <span class="player-ayah-count">${t && getSurah(tr.surahId) ? t("rec.verses", { n: getSurah(tr.surahId).ayahs }) : ""}</span>
           </div>
           ${progressHTML()}
         </div>
 
         <div class="player-controls">
-          <button class="ctl-pill" data-act="speed-cycle">${icon("speed", 16)}<span id="speedLabel">${st.speed}x</span></button>
-          <button class="ctl-btn" data-act="prev" title="Previous">${icon("prev", 26)}</button>
-          <button class="ctl-btn ctl-play ${st.buffering ? "buffering" : ""}" data-act="toggle" title="Play / Pause">
+          <button class="ctl-pill" data-act="speed-cycle">${icon("speed", 16)}<span id="speedLabel">${t("pl.speed", { s: st.speed })}</span></button>
+          <button class="ctl-btn" data-act="prev" title="${t("pl.prev")}">${icon("prev", 26)}</button>
+          <button class="ctl-btn ctl-play ${st.buffering ? "buffering" : ""}" data-act="toggle" title="${t("pl.toggle")}">
             ${st.buffering ? icon("spinner", 26) : st.playing ? icon("pause", 26) : icon("play", 26)}
           </button>
-          <button class="ctl-btn" data-act="next" title="Next">${icon("next", 26)}</button>
-          <button class="ctl-pill ${App.engine.sleep ? "active" : ""}" data-act="sleep-sheet">${icon("moon", 16)}<span>Sleep</span>${sleepBtn}</button>
+          <button class="ctl-btn" data-act="next" title="${t("pl.next")}">${icon("next", 26)}</button>
+          <button class="ctl-pill ${App.engine.sleep ? "active" : ""}" data-act="sleep-sheet">${icon("moon", 16)}<span>${t("pl.sleep")}</span>${sleepBtn}</button>
         </div>
 
         <div class="volume-block">
           <div class="volume-row">
-            <div class="volume-label">${icon("volume", 16)}<span>Quran Volume</span></div>
+            <div class="volume-label">${icon("volume", 16)}<span>${t("pl.quranVol")}</span></div>
             <input type="range" class="slider" min="0" max="1" step="0.01" value="${App.engine.audio.volume}" data-act="qvol" style="--fill:${App.engine.audio.volume * 100}%" aria-label="Quran volume"/>
           </div>
           <div class="volume-row">
-            <div class="volume-label">${icon(ambient.current === "off" ? "moonoff" : "cloudLightning", 16)}<span>Background Sound</span></div>
+            <div class="volume-label">${icon(ambient.current === "off" ? "moonoff" : "cloudLightning", 16)}<span>${t("pl.bgVol")}</span></div>
             <input type="range" class="slider" min="0" max="1" step="0.01" value="${ambient.volume}" data-act="bvol" style="--fill:${ambient.volume * 100}%" aria-label="Background volume"/>
           </div>
         </div>
 
         <div class="player-foot">
-          <button class="pill pill-ambient" data-act="ambient-sheet">${icon("waves", 16)}<span id="ambientPillLabel">Background Sound · ${esc(bgName)}</span>${icon("chevronDown", 14)}</button>
-          <button class="pill pill-verses" data-act="toggle-verses">${icon("book", 16)}<span id="versesBtnLabel">Show Verses</span></button>
+          <button class="pill pill-ambient" data-act="ambient-sheet">${icon("waves", 16)}<span id="ambientPillLabel">${t("pl.bgPill", { name: bgName })}</span>${icon("chevronDown", 14)}</button>
+          <button class="pill pill-verses" data-act="toggle-verses">${icon("book", 16)}<span id="versesBtnLabel">${t("pl.showVerses")}</span></button>
         </div>
       </div>
 
@@ -410,35 +416,57 @@ async function ensureQuranData() {
   } catch { return false; }
 }
 
-async function computeActiveAyah(surahId, time, duration) {
-  const reciterId = App.engine.state.track?.reciterId;
-  if (!reciterId || !surahId) return 1;
-  const timings = await getTimings(reciterId, surahId);
-  if (timings && timings.length) {
-    let active = timings[0].ayah;
-    for (const tt of timings) { if (time >= tt.start) active = tt.ayah; else break; }
-    return active;
-  }
-  if (!duration) return 1;
+/* Estimate per-verse start times (seconds) for a surah.
+   Pause-aware: reciters pause ~0.8s between verses, so a pure
+   character-proportion estimate races ahead of the audio.
+   This keeps the active-verse highlight in sync with the voice. */
+export function estimateVerseStarts(surahId, duration) {
   const s = getSurah(surahId);
   const ar = App.quranAr?.[surahId] || {};
-  if (!s) return 1;
-  let total = 0; const w = [];
-  for (let i = 1; i <= s.ayahs; i++) { const x = (ar[i] || "").length + 1; w.push(x); total += x; }
+  if (!s || !duration || duration <= 0) return null;
+  const N = s.ayahs;
+  const PAUSE = 0.8; // typical gap between verses in murattal
+  const chars = [];
+  let total = 0;
+  for (let i = 1; i <= N; i++) { const c = (ar[i] || "").length + 1; chars.push(c); total += c; }
+  const usable = Math.max(0.2, duration - PAUSE * (N - 1));
+  const starts = [0];
   let acc = 0;
-  for (let i = 1; i <= s.ayahs; i++) { acc += w[i - 1] / total; if (time / duration <= acc) return i; }
-  return s.ayahs;
+  for (let i = 1; i <= N; i++) {
+    starts.push((acc / total) * usable + (i - 1) * PAUSE);
+    acc += chars[i - 1];
+  }
+  return starts;
+}
+
+async function computeActiveAyah(surahId, time, duration) {
+  const reciterId = App.engine.state.track?.reciterId;
+  if (!reciterId || !surahId || time <= 0.35) return 1;
+  const timings = await getTimings(reciterId, surahId);
+  if (timings && timings.length) {
+    // stretch official timings to the actual file duration (recordings differ slightly)
+    const last = timings[timings.length - 1].start;
+    const k = (duration && last > 0) ? Math.min(1.6, Math.max(0.6, duration / last)) : 1;
+    let active = timings[0].ayah;
+    for (const tt of timings) { if (time >= tt.start * k) active = tt.ayah; else break; }
+    return active;
+  }
+  const starts = estimateVerseStarts(surahId, duration);
+  if (!starts) return 1;
+  let active = 1;
+  for (let i = 1; i < starts.length; i++) { if (time >= starts[i]) active = i; else break; }
+  return active;
 }
 
 export async function openVerses() {
-  const t = App.engine.state.track;
-  if (!t) return toast("Nothing playing", "info");
+  const tr = App.engine.state.track;
+  if (!t) return toast(t("toast.notPlaying"), "info");
   App.versesOpen = true;
   const overlay = $("#expanded");
   if (!overlay) return;
   overlay.classList.add("verses-open");
   const lbl = $("#versesBtnLabel");
-  if (lbl) lbl.textContent = "Hide Verses";
+  if (lbl) lbl.textContent = t("pl.hideVerses");
   await renderVersesPanel();
 }
 
@@ -447,7 +475,7 @@ export function closeVerses() {
   const overlay = $("#expanded");
   if (overlay) overlay.classList.remove("verses-open");
   const lbl = $("#versesBtnLabel");
-  if (lbl) lbl.textContent = "Show Verses";
+  if (lbl) lbl.textContent = t("pl.showVerses");
 }
 
 async function renderVersesPanel() {
@@ -478,7 +506,7 @@ async function renderVersesPanel() {
         ${avatarImg(getReciter(t.reciterId), 40)}
         <div class="pv-mini-meta">
           <div class="pv-mini-title">${esc(t.surahName)}</div>
-          <div class="pv-mini-sub">${esc(t.reciterName)}</div>
+          <div class="pv-mini-sub">${esc(recName(getReciter(t.reciterId)))}</div>
         </div>
         <button class="icon-btn" data-act="prev" title="Previous">${icon("prev", 19)}</button>
         <button class="icon-btn pv-play" data-act="toggle" title="Play / Pause">${App.engine.state.playing ? icon("pause", 19) : icon("play", 19)}</button>
@@ -489,7 +517,7 @@ async function renderVersesPanel() {
   const okData = await ensureQuranData();
   const list = panel.querySelector(".pv-list");
   if (!list) return;
-  if (!okData) { list.innerHTML = `<div class="empty-inline">Could not load the mushaf text.</div>`; return; }
+  if (!okData) { list.innerHTML = `<div class="empty-inline">${t("pv.loadErr")}</div>`; return; }
 
   const ar = App.quranAr[s.id] || {};
   const en = App.quranEn[s.id] || {};
@@ -575,27 +603,27 @@ function queueSheet() {
         <span class="queue-rec">${esc(t.reciterName)}</span>
         ${cur && t.surahId === cur.surahId && t.reciterId === cur.reciterId ? icon("volume", 15) : icon("play", 15)}
       </button>`).join("")
-    : `<div class="empty-inline">The queue is empty — play a surah to begin.</div>`;
-  openSheet({ title: "Up next", body: `<div class="queue-list">${rows}</div>` });
+    : `<div class="empty-inline">${t("sh.queueEmpty")}</div>`;
+  openSheet({ title: t("q.upnext"), body: `<div class="queue-list">${rows}</div>` });
 }
 
 function sleepSheet() {
   const opts = [
-    { mode: "time", minutes: 10, label: "10 minutes" },
-    { mode: "time", minutes: 20, label: "20 minutes" },
-    { mode: "time", minutes: 30, label: "30 minutes" },
-    { mode: "time", minutes: 45, label: "45 minutes" },
-    { mode: "time", minutes: 60, label: "1 hour" },
-    { mode: "end-surah", label: "End of surah" },
-    { mode: "end-queue", label: "End of queue" },
-    { mode: "off", label: "Turn off" },
+    { mode: "time", minutes: 10, label: t("sh.sleep10") },
+    { mode: "time", minutes: 20, label: t("sh.sleep20") },
+    { mode: "time", minutes: 30, label: t("sh.sleep30") },
+    { mode: "time", minutes: 45, label: t("sh.sleep45") },
+    { mode: "time", minutes: 60, label: t("sh.sleep60") },
+    { mode: "end-surah", label: t("sh.sleepEndSurah") },
+    { mode: "end-queue", label: t("sh.sleepEndQueue") },
+    { mode: "off", label: t("sh.sleepOff") },
   ];
   const active = App.engine.sleep;
   const rows = opts.map((o) => `
     <button class="sheet-row ${active && active.mode === o.mode && (o.minutes === undefined || active.minutes === o.minutes) ? "active" : ""}" data-act="sleep-set" data-mode="${o.mode}" data-min="${o.minutes || 0}">
       <span>${o.label}</span>${icon("check", 16)}
     </button>`).join("");
-  openSheet({ title: "Sleep timer", body: `<div class="sheet-list">${rows}</div>` });
+  openSheet({ title: t("sh.sleepTitle"), body: `<div class="sheet-list">${rows}</div>` });
 }
 
 function ambientSheet() {
@@ -608,8 +636,8 @@ function ambientSheet() {
     </button>`;
   }).join("");
   openSheet({
-    title: "Background sound",
-    body: `<p class="sheet-hint">Combine recitation with a calm ambient atmosphere. The two volumes are independent.</p><div class="ambient-grid">${rows}</div>`,
+    title: t("sh.bgTitle"),
+    body: `<p class="sheet-hint">${t("sh.bgHint")}</p><div class="ambient-grid">${rows}</div>`,
   });
 }
 
@@ -620,8 +648,8 @@ function playlistPickerSheet(track, menuEl) {
       <button class="sheet-row" data-act="add-to-playlist" data-pl="${i}" data-rid="${track.reciterId}" data-sid="${track.surahId}">
         <span>${esc(p.name)}</span>${icon("plus", 16)}
       </button>`).join("")
-    : `<div class="empty-inline">No playlists yet. Create one from the Playlists tab.</div>`;
-  openSheet({ title: `Add to playlist · ${esc(track.surahName)}`, body: `<div class="sheet-list">${rows}</div>` });
+    : `<div class="empty-inline">${t("sh.noPlaylists")}</div>`;
+  openSheet({ title: t("sh.addToPlaylist", { name: esc(track.surahName) }), body: `<div class="sheet-list">${rows}</div>` });
 }
 
 function addToPlaylist(plIndex, reciterId, surahId) {
@@ -629,12 +657,12 @@ function addToPlaylist(plIndex, reciterId, surahId) {
   const pl = playlists[plIndex];
   if (!pl) return;
   const t = buildTrack(reciterId, surahId);
-  if (!t) return toast("This surah is not available yet", "info");
+  if (!t) return toast(t("toast.recUnavailable"), "info");
   const dup = pl.tracks.some((x) => x.reciterId === reciterId && x.surahId === surahId);
-  if (dup) return toast("Already in playlist", "info");
+  if (dup) return toast(t("sh.alreadyIn"), "info");
   pl.tracks.push({ reciterId, surahId });
   Store.set("playlists", playlists);
-  toast(`Added to “${pl.name}”`);
+  toast(t("sh.addedTo", { name: pl.name }));
   render();
 }
 
@@ -723,7 +751,7 @@ const Actions = {
     closeSheets();
     renderMiniPlayer();
     syncExpanded();
-    toast(m === "off" ? "Sleep timer off" : "Sleep timer set");
+    toast(m === "off" ? t("sh.sleepOffToast") : t("sh.sleepSet"));
   },
   "ambient-sheet"() { ambientSheet(); },
   "ambient-set"(el) {
@@ -732,14 +760,14 @@ const Actions = {
     $$(".ambient-tile").forEach((t) => t.classList.toggle("active", t.dataset.id === id));
     updateAmbientVisuals(id);
     const lbl = $("#ambientPillLabel");
-    if (lbl) lbl.textContent = "Background Sound · " + (AMBIENT_SOUNDS.find((s) => s.id === id)?.name || "None");
+    if (lbl) lbl.textContent = t("pl.bgPill", { name: AMBIENT_SOUNDS.find((s) => s.id === id)?.name || "None" });
   },
   "fav-track"() {
     const t = App.engine.state.track;
     if (!t) return;
     toggleFavSurah(t.surahId);
     syncExpanded();
-    toast(isFavSurah(t.surahId) ? "Added to favorites" : "Removed from favorites");
+    toast(isFavSurah(t.surahId) ? t("fav.added") : t("fav.removed"));
   },
   "queue-jump"(el) { App.engine.jumpTo(Number(el.dataset.i)); closeSheets(); },
   "menu-read"(el) {
@@ -751,7 +779,7 @@ const Actions = {
     const d = el.dataset;
     toggleFavSurah(Number(d.sid));
     closeDropdown();
-    toast(isFavSurah(Number(d.sid)) ? "Added to favorites" : "Removed from favorites");
+    toast(isFavSurah(Number(d.sid)) ? t("fav.added") : t("fav.removed"));
     render();
   },
   "menu-playlist"(el) {
@@ -765,12 +793,18 @@ const Actions = {
     const s = getSurah(Number(d.sid));
     closeDropdown();
     if (navigator.share) navigator.share({ title: s.name, text: `${s.name} — ${s.nameAr}` }).catch(() => {});
-    else navigator.clipboard?.writeText(`Sakina — ${s.name} (${s.nameAr})`).then(() => toast("Copied to clipboard")).catch(() => {});
+    else navigator.clipboard?.writeText(`Sakina — ${s.name} (${s.nameAr})`).then(() => toast(t("toast.copied"))).catch(() => {});
   },
   "add-to-playlist"(el) {
     const d = el.dataset;
     addToPlaylist(Number(d.pl), d.rid, Number(d.sid));
     closeSheets();
+  },
+  "surah-unavailable"(el) {
+    const d = el.dataset;
+    const rec = getReciter(d.rid);
+    const n = rec ? availableSurahCount(rec) : 0;
+    toast(t("rec.notAvailToast", { name: recName(rec), n }), "info");
   },
   "play-surah"(el) {
     const d = el.dataset;
@@ -783,7 +817,7 @@ const Actions = {
     const d = el.dataset;
     toggleFavReciter(d.rid);
     render();
-    toast(isFavReciter(d.rid) ? "Reciter added to favorites" : "Reciter removed from favorites");
+    toast(isFavReciter(d.rid) ? t("fav.addedRec") : t("fav.removedRec"));
   },
   "download"(el) { downloadOffline(el.dataset.rid, Number(el.dataset.sid)); },
   "read-surah"(el) {
@@ -793,11 +827,11 @@ const Actions = {
   "resume"() {
     const lp = Store.get("lastPlayed", null);
     if (!lp) return;
-    const t = buildTrack(lp.reciterId, lp.surahId);
-    if (!t) return toast("Recording unavailable", "err");
-    App.engine.loadTrack(t, { autoplay: true, position: lp.position > 3 && lp.position < 0.99 * (App.engine.state.duration || 1e9) ? lp.position : 0, queue: queueForReciter(lp.reciterId) });
+    const tr = buildTrack(lp.reciterId, lp.surahId);
+    if (!tr) return toast(t("toast.recUnavailable"), "err");
+    App.engine.loadTrack(tr, { autoplay: true, position: lp.position > 3 && lp.position < 0.99 * (App.engine.state.duration || 1e9) ? lp.position : 0, queue: queueForReciter(lp.reciterId) });
     renderMiniPlayer();
-    toast("Resumed · " + t.surahName);
+    toast(t("toast.resumed", { name: tr.surahName }));
   },
   "verse-tap"(el) {
     const d = el.dataset;
@@ -807,9 +841,9 @@ const Actions = {
     const idx = Number(el.dataset.idx);
     const playlists = Store.get("playlists", []);
     const pl = playlists[idx];
-    if (!pl || !pl.tracks.length) return toast("Playlist is empty", "info");
-    const q = pl.tracks.map((t) => buildTrack(t.reciterId, t.surahId)).filter(Boolean);
-    if (!q.length) return toast("No available recordings", "err");
+    if (!pl || !pl.tracks.length) return toast(t("pls.empty"), "info");
+    const q = pl.tracks.map((tr) => buildTrack(tr.reciterId, tr.surahId)).filter(Boolean);
+    if (!q.length) return toast(t("toast.recUnavailable"), "err");
     App.engine.loadTrack(q[0], { autoplay: true, queue: q });
     renderMiniPlayer();
   },
@@ -838,20 +872,20 @@ const Actions = {
     const playlists = Store.get("playlists", []);
     playlists.splice(Number(d.idx), 1);
     Store.set("playlists", playlists);
-    toast("Playlist deleted");
+    toast(t("pls.deleted"));
     navigate("playlists");
   },
   "new-playlist"() { newPlaylistSheet(); },
   "create-playlist"() {
     const input = $("#newpl-name");
     const name = (input?.value || "").trim();
-    if (!name) return toast("Give the playlist a name", "err");
+    if (!name) return toast(t("sh.giveName"), "err");
     const playlists = Store.get("playlists", []);
     playlists.unshift({ id: "pl" + Date.now(), name, createdAt: Date.now(), tracks: [] });
     Store.set("playlists", playlists);
     closeSheets();
     render();
-    toast("Playlist created");
+    toast(t("sh.playlistCreated"));
   },
   "toggle-setting"(el) {
     const d = el.dataset;
@@ -863,6 +897,16 @@ const Actions = {
       if (r.name === "read") render();
     }
   },
+  "lang-set"(el) {
+    const lang = el.dataset.lang;
+    const s = Store.get("settings", {});
+    s.lang = lang;
+    Store.set("settings", s);
+    setLang(lang);
+    renderChrome();
+    render();
+    toast(lang === "ar" ? "تم التبديل إلى العربية" : "Switched to English");
+  },
   "accent-set"(el) {
     const s = Store.get("settings", {});
     s.accent = el.dataset.accent;
@@ -871,7 +915,7 @@ const Actions = {
     render();
   },
   "clear-data"() {
-    if (confirm("Clear all local data (favorites, playlists, settings)?")) {
+    if (confirm(t("set.clearConfirm"))) {
       ["sakina.v1.favorites", "sakina.v1.playlists", "sakina.v1.settings", "sakina.v1.lastPlayed", "sakina.v1.recent", "sakina.v1.recentReciters", "sakina.v1.repeat", "sakina.v1.shuffle"].forEach((k) => localStorage.removeItem(k));
       location.reload();
     }
@@ -911,7 +955,7 @@ export function playSurah(reciterId, surahId, { autoplay = true } = {}) {
   const t = buildTrack(reciterId, surahId);
   if (!t) {
     const r = getReciter(reciterId);
-    toast(r?.unavailable ? `Full-surah recordings by ${r.name} are not published yet — no audio was faked.` : "Recording unavailable", "err");
+    toast(r?.unavailable ? t("toast.noFake", { name: r.name }) : t("toast.recUnavailable"), "err");
     return;
   }
   const ok = App.engine.loadTrack(t, { autoplay, queue: queueForReciter(reciterId) });
@@ -974,8 +1018,8 @@ function screenHome() {
     <div class="screen home">
       <header class="home-head">
         <div>
-          <h1 class="page-title">Good ${new Date().getHours() < 12 ? "morning" : "evening"}</h1>
-          <p class="page-sub">${dateStr}</p>
+          <h1 class="page-title">${t(new Date().getHours() < 12 ? "home.greeting.am" : "home.greeting.pm")}</h1>
+          <p class="page-sub">${fmtWeekday(new Date())}</p>
         </div>
         <button class="icon-btn" data-act="nav" data-nav="settings" aria-label="Settings">${icon("gear", 20)}</button>
       </header>
@@ -984,27 +1028,27 @@ function screenHome() {
       <section class="continue-card glass" data-act="resume" role="button">
         <div class="continue-art">${avatarImg(getReciter(lpTrack.reciterId), 64)}</div>
         <div class="continue-meta">
-          <div class="continue-kicker">Continue listening</div>
+          <div class="continue-kicker">${t("home.continue")}</div>
           <div class="continue-title">${esc(lpTrack.surahName)}</div>
-          <div class="continue-sub">${esc(lpTrack.reciterName)} · ${timeAgo(lp.updatedAt)}</div>
+          <div class="continue-sub">${esc(recName(getReciter(lpTrack.reciterId)))} · ${timeAgo(lp.updatedAt)}</div>
         </div>
-        <span class="pill pill-primary continue-btn">${icon("play", 16)}<span>Resume</span></span>
+        <span class="pill pill-primary continue-btn">${icon("play", 16)}<span>${t("home.resume")}</span></span>
       </section>` : ""}
 
       <section class="home-section">
-        <div class="section-head"><h2>Featured reciters</h2><button class="text-btn" data-act="nav" data-nav="reciters">See all</button></div>
+        <div class="section-head"><h2>${t("home.featured")}</h2><button class="text-btn" data-act="nav" data-nav="reciters">${t("home.seeall")}</button></div>
         <div class="reciter-scroll">
           ${featured.map((r) => `
             <button class="reciter-card" data-act="nav" data-nav="reciter/${r.id}">
               ${avatarImg(r, 96)}
-              <span class="reciter-card-name">${esc(r.name.split(" ").slice(-1)[0] === "Alafasy" ? "Mishary Alafasy" : r.name)}</span>
-              <span class="reciter-card-sub">${esc(r.country)}</span>
+              <span class="reciter-card-name">${esc(recName(r))}</span>
+              <span class="reciter-card-sub">${getLang() === "ar" ? esc(r.countryAr || "") : esc(r.country)}</span>
             </button>`).join("")}
         </div>
       </section>
 
       <section class="home-section">
-        <div class="section-head"><h2>Popular surahs</h2><button class="text-btn" data-act="nav" data-nav="search">Search</button></div>
+        <div class="section-head"><h2>${t("home.popular")}</h2><button class="text-btn" data-act="nav" data-nav="search">${t("nav.search")}</button></div>
         <div class="surah-chips">
           ${popular.map((s) => `
             <button class="chip-card" data-act="play-surah" data-rid="${App.defaultReciterId()}" data-sid="${s.id}">
@@ -1017,12 +1061,12 @@ function screenHome() {
 
       ${recent.length ? `
       <section class="home-section">
-        <div class="section-head"><h2>Recently played</h2></div>
+        <div class="section-head"><h2>${t("home.recent")}</h2></div>
         <div class="recent-list">
           ${recent.map(({ track, at }) => `
             <button class="recent-row" data-act="play-surah" data-rid="${track.reciterId}" data-sid="${track.surahId}">
               ${avatarImg(getReciter(track.reciterId), 44)}
-              <span class="recent-meta"><span class="recent-name">${esc(track.surahName)}</span><span class="recent-sub">${esc(track.reciterName)} · ${timeAgo(at)}</span></span>
+              <span class="recent-meta"><span class="recent-name">${esc(track.surahName)}</span><span class="recent-sub">${esc(recName(getReciter(track.reciterId)))} · ${timeAgo(at)}</span></span>
               ${icon("play", 18)}
             </button>`).join("")}
         </div>
@@ -1035,16 +1079,16 @@ function screenReciters() {
   return `
     <div class="screen">
       <header class="page-head">
-        <h1 class="page-title">Reciters</h1>
-        <p class="page-sub">Choose the voice that moves you</p>
+        <h1 class="page-title">${t("rec.title")}</h1>
+        <p class="page-sub">${t("rec.sub")}</p>
       </header>
       <div class="reciters-grid">
         ${RECITERS.map((r) => `
           <button class="reciter-tile" data-act="nav" data-nav="reciter/${r.id}">
             ${avatarImg(r, 112)}
-            <span class="reciter-tile-name">${esc(r.name)}</span>
-            <span class="reciter-tile-sub">${esc(r.country)}${r.years ? " · " + r.years : ""}</span>
-            ${r.unavailable ? `<span class="reciter-tile-tag">Selected recordings</span>` : `<span class="reciter-tile-tag">114 surahs</span>`}
+            <span class="reciter-tile-name">${esc(recName(r))}</span>
+            <span class="reciter-tile-sub">${getLang() === "ar" ? esc(r.countryAr || "") : esc(r.country)}${r.years ? " · " + r.years : ""}</span>
+            ${r.unavailable ? `<span class="reciter-tile-tag">${t("rec.selected")}</span>` : availableSurahCount(r) < 114 ? `<span class="reciter-tile-tag">${t("rec.count", { n: availableSurahCount(r) })}</span>` : `<span class="reciter-tile-tag">${t("rec.114")}</span>`}
           </button>`).join("")}
       </div>
     </div>`;
@@ -1053,32 +1097,32 @@ function screenReciters() {
 /* ---------- RECITER PROFILE ---------- */
 function screenReciter(id) {
   const r = getReciter(id);
-  if (!r) return `<div class="screen"><div class="empty">Reciter not found.</div></div>`;
+  if (!r) return `<div class="screen"><div class="empty">${t("rec.notFound")}</div></div>`;
   const fav = isFavReciter(id);
   return `
     <div class="screen">
-      <button class="back-btn" data-act="nav" data-nav="reciters">${icon("arrowLeft", 18)}<span>Reciters</span></button>
+      <button class="back-btn" data-act="nav" data-nav="reciters">${icon("arrowLeft", 18)}<span>${t("nav.reciters")}</span></button>
 
       <header class="profile-head">
         ${avatarImg(r, 140)}
         <div class="profile-meta">
-          <h1 class="profile-name">${esc(r.name)}</h1>
-          <div class="profile-loc">${icon("radio", 13)}<span>${esc(r.city)} · ${esc(r.country)}</span></div>
-          <div class="profile-status ${r.years ? "muted" : "live"}"><span class="dot"></span>${r.years ? esc(r.years) : "Reciting today"}</div>
-          <p class="profile-bio">${esc(r.bio)}</p>
+          <h1 class="profile-name">${esc(recName(r))}</h1>
+          <div class="profile-loc">${icon("radio", 13)}<span>${esc(recLoc(r))}</span></div>
+          <div class="profile-status ${r.years ? "muted" : "live"}"><span class="dot"></span>${r.years ? esc(r.years) : t("rec.recitingToday")}</div>
+          <p class="profile-bio">${esc(recBio(r))}</p>
           <div class="profile-actions">
-            <button class="pill ${fav ? "on" : ""}" data-act="fav-reciter" data-rid="${r.id}">${icon("heart", 17)}<span>${fav ? "Favorited" : "Favorite"}</span></button>
-            <button class="pill" data-act="play-reciter" data-rid="${r.id}">${icon("shuffle", 16)}<span>Shuffle</span></button>
-            <button class="pill pill-primary" data-act="play-surah" data-rid="${r.id}" data-sid="1">${icon("play", 16)}<span>${r.unavailable ? "Unavailable" : "Play"}</span></button>
+            <button class="pill ${fav ? "on" : ""}" data-act="fav-reciter" data-rid="${r.id}">${icon("heart", 17)}<span>${fav ? t("rec.favorited") : t("rec.favorite")}</span></button>
+            <button class="pill" data-act="play-reciter" data-rid="${r.id}">${icon("shuffle", 16)}<span>${t("rec.shuffle")}</span></button>
+            <button class="pill pill-primary" data-act="play-surah" data-rid="${r.id}" data-sid="1">${icon("play", 16)}<span>${r.unavailable || !localFatihahFor(r) ? t("rec.unavailable") : t("rec.play")}</span></button>
           </div>
         </div>
       </header>
 
-      <div class="profile-count">${r.unavailable ? "Full mushaf recordings are not yet published" : "114 surahs recorded"}</div>
+      <div class="profile-count">${r.unavailable ? t("rec.noMushaf") : t("rec.count", { n: availableSurahCount(r) })}</div>
 
       <div class="search-field">
         ${icon("search", 17)}
-        <input id="surah-search" type="text" placeholder="Search surah" autocomplete="off" />
+        <input id="surah-search" type="text" placeholder="${t("rec.search")}" autocomplete="off" />
         <button class="search-clear" id="surah-search-clear" hidden>${icon("x", 15)}</button>
       </div>
 
@@ -1095,21 +1139,38 @@ function surahRows(reciter, q) {
     if (!needle) return true;
     return s.name.toLowerCase().includes(needle) || s.nameAr.includes(q.trim()) || s.transName.toLowerCase().includes(needle);
   });
-  if (!rows.length) return `<div class="empty">No surahs match “${esc(q)}”.</div>`;
-  return rows.map((s) => `
+  if (!rows.length) return `<div class="empty">${t("rec.noMatch", { q })}</div>`;
+  return rows.map((s) => {
+    const hasAudio = audioUrlFor(reciter, s.id) !== null || (s.id === 1 && localFatihahFor(reciter));
+    if (!hasAudio) {
+      return `
+      <div class="surah-row unavailable" data-act="surah-unavailable" data-rid="${reciter.id}" data-sid="${s.id}" role="button" tabindex="0" title="${t("rec.unavailable")}">
+        <span class="surah-badge">${s.id}</span>
+        <span class="surah-names">
+          <span class="surah-en">${esc(s.name)}</span>
+          <span class="surah-sub">${t("rec.unavailable")}</span>
+        </span>
+        <span class="surah-ar" dir="rtl">${s.nameAr}</span>
+        <span class="surah-actions" >
+          <button class="icon-btn" data-act="read-surah" data-rid="${reciter.id}" data-sid="${s.id}" title="${t("rec.read")}">${icon("book", 18)}</button>
+        </span>
+      </div>`;
+    }
+    return `
     <div class="surah-row" data-act="play-surah" data-rid="${reciter.id}" data-sid="${s.id}" role="button" tabindex="0">
       <span class="surah-badge">${s.id}</span>
       <span class="surah-names">
         <span class="surah-en">${esc(s.name)}</span>
-        <span class="surah-sub">${s.place === "makkah" ? "Makki" : "Madani"} · ${s.ayahs} verses</span>
+        <span class="surah-sub">${t(s.place === "makkah" ? "rec.makki" : "rec.madani")} · ${t("rec.verses", { n: s.ayahs })}</span>
       </span>
       <span class="surah-ar" dir="rtl">${s.nameAr}</span>
       <span class="surah-actions" >
-        <button class="icon-btn" data-act="read-surah" data-rid="${reciter.id}" data-sid="${s.id}" title="Read">${icon("book", 18)}</button>
-        <button class="icon-btn" data-act="download" data-rid="${reciter.id}" data-sid="${s.id}" title="Download">${icon("download", 18)}</button>
-        <button class="icon-btn" data-act="row-menu" data-rid="${reciter.id}" data-sid="${s.id}" title="More">${icon("more", 18)}</button>
+        <button class="icon-btn" data-act="read-surah" data-rid="${reciter.id}" data-sid="${s.id}" title="${t("rec.read")}">${icon("book", 18)}</button>
+        <button class="icon-btn" data-act="download" data-rid="${reciter.id}" data-sid="${s.id}" title="${t("rec.download")}">${icon("download", 18)}</button>
+        <button class="icon-btn" data-act="row-menu" data-rid="${reciter.id}" data-sid="${s.id}" title="${t("rec.more")}">${icon("more", 18)}</button>
       </span>
-    </div>`).join("");
+    </div>`;
+  }).join("");
 }
 
 function bindReciter(id) {
@@ -1127,7 +1188,7 @@ function bindReciter(id) {
 /* ---------- READING MODE ---------- */
 function screenRead(surahId, params) {
   const s = getSurah(Number(surahId));
-  if (!s) return `<div class="screen"><div class="empty">Surah not found.</div></div>`;
+  if (!s) return `<div class="screen"><div class="empty">${t("read.notFound")}</div></div>`;
   const reciterId = params.rec || App.defaultReciterId();
   App.readingSurahId = s.id;
 
@@ -1138,7 +1199,7 @@ function screenRead(surahId, params) {
         <button class="back-btn" data-act="nav" data-nav="reciter/${reciterId}">${icon("arrowLeft", 18)}<span>${esc(getReciter(reciterId)?.name || "")}</span></button>
         <div class="read-title-block">
           <h1 class="read-title" dir="rtl">${s.nameAr}</h1>
-          <p class="read-sub">${esc(s.name)} — ${esc(s.transName)} · ${s.place === "makkah" ? "Makki" : "Madani"} · ${s.ayahs} verses</p>
+          <p class="read-sub">${esc(s.name)} — ${esc(s.transName)} · ${t(s.place === "makkah" ? "rec.makki" : "rec.madani")} · ${t("rec.verses", { n: s.ayahs })}</p>
         </div>
         <button class="icon-btn" data-act="sleep-sheet" title="Sleep timer">${icon("moon", 18)}</button>
       </header>
@@ -1150,7 +1211,7 @@ function screenRead(surahId, params) {
           </div>
         </aside>
         <div class="verses" id="verses" dir="auto">
-          <div class="verses-loading">${icon("spinner", 22)}<span>Preparing the mushaf…</span></div>
+          <div class="verses-loading">${icon("spinner", 22)}<span>${t("pv.loading")}</span></div>
         </div>
       </div>
     </div>`;
@@ -1158,28 +1219,28 @@ function screenRead(surahId, params) {
 
 function readingPlayerHTML() {
   const st = App.engine.state;
-  const t = st.track;
-  const reciter = t ? getReciter(t.reciterId) : null;
+  const tr = st.track;
+  const reciter = tr ? getReciter(tr.reciterId) : null;
   const pct = st.duration ? (st.position / st.duration) * 100 : 0;
   return `
     <div class="rp-head">
-      ${t ? avatarImg(reciter, 64) : `<div class="avatar avatar-placeholder" style="width:64px;height:64px"><span>${icon("music", 22)}</span></div>`}
+      ${tr ? avatarImg(reciter, 64) : `<div class="avatar avatar-placeholder" style="width:64px;height:64px"><span>${icon("music", 22)}</span></div>`}
       <div class="rp-meta">
-        <div class="rp-title">${t ? esc(t.surahName) : "Nothing playing"}</div>
-        <div class="rp-sub">${t ? esc(t.reciterName) : "Play from the list"}</div>
+        <div class="rp-title">${t ? esc(t.surahName) : esc(t("pl.nothing"))}</div>
+        <div class="rp-sub">${t ? esc(recName(getReciter(t.reciterId))) : t("pl.choose")}</div>
       </div>
-      <button class="icon-btn heart ${isFavSurah(t?.surahId) ? "on" : ""}" data-act="fav-track" title="Favorite">${icon("heart", 19)}</button>
+      <button class="icon-btn heart ${isFavSurah(t?.surahId) ? "on" : ""}" data-act="fav-track" title="${t("fav.added")}">${icon("heart", 19)}</button>
     </div>
     <div class="rp-controls">
       <button class="ctl-pill" data-act="speed-cycle">${icon("speed", 15)}<span>${st.speed}x</span></button>
       <button class="ctl-btn" data-act="prev">${icon("prev", 22)}</button>
       <button class="ctl-btn ctl-play ${st.buffering ? "buffering" : ""}" data-act="toggle">${st.buffering ? icon("spinner", 22) : st.playing ? icon("pause", 22) : icon("play", 22)}</button>
       <button class="ctl-btn" data-act="next">${icon("next", 22)}</button>
-      <button class="ctl-pill ${App.engine.sleep ? "active" : ""}" data-act="sleep-sheet">${icon("moon", 15)}<span>Sleep</span></button>
+      <button class="ctl-pill ${App.engine.sleep ? "active" : ""}" data-act="sleep-sheet">${icon("moon", 15)}<span>${t("pl.sleep")}</span></button>
     </div>
     <div class="rp-progress">${progressHTML()}</div>
     <div class="rp-foot">
-      <button class="pill pill-ambient" data-act="ambient-sheet">${icon("waves", 15)}<span>Background sound</span></button>
+      <button class="pill pill-ambient" data-act="ambient-sheet">${icon("waves", 15)}<span>${t("pl.bgVol")}</span></button>
       <button class="icon-btn" data-act="expand-player" title="Expand">${icon("chevronDown", 18)}</button>
     </div>`;
 }
@@ -1188,7 +1249,7 @@ async function renderVerses(surahId) {
   const host = $("#verses");
   if (!host) return;
   if (!(await ensureQuranData())) {
-    host.innerHTML = `<div class="empty">Could not load the mushaf text. Check your connection.</div>`;
+    host.innerHTML = `<div class="empty">${t("pv.loadErr")}</div>`;
     return;
   }
   const s = getSurah(Number(surahId));
@@ -1247,7 +1308,7 @@ async function seekToVerse(ayah) {
   // then seek to the tapped verse once its duration is known.
   if (!st.track || st.track.surahId !== surahId) {
     const t = buildTrack(reciterId, surahId);
-    if (!t) return toast("Recording unavailable", "err");
+    if (!t) return toast(t("toast.recUnavailable"), "err");
     App.engine.loadTrack(t, { autoplay: true, queue: queueForReciter(reciterId) });
     const target = ayah;
     App.engine.once("duration", async () => {
@@ -1287,14 +1348,9 @@ async function getTimings(reciterId, surahId) {
 }
 
 function estimateOffset(surahId, ayah) {
-  const s = getSurah(surahId);
-  const ar = App.quranAr?.[surahId] || {};
-  let total = 0;
-  const w = [];
-  for (let i = 1; i <= s.ayahs; i++) { const x = (ar[i] || "").length + 1; w.push(x); total += x; }
-  let acc = 0;
-  for (let i = 1; i < ayah; i++) acc += w[i - 1] / total;
-  return acc * (App.engine.state.duration || 0);
+  const starts = estimateVerseStarts(surahId, App.engine.state.duration || 0);
+  if (!starts) return 0;
+  return starts[Math.min(ayah, starts.length - 1)] || 0;
 }
 
 function bindRead(surahId) {
@@ -1306,12 +1362,12 @@ function screenSearch() {
   return `
     <div class="screen">
       <header class="page-head">
-        <h1 class="page-title">Search</h1>
-        <p class="page-sub">Surahs and reciters</p>
+        <h1 class="page-title">${t("sr.title")}</h1>
+        <p class="page-sub">${t("sr.sub")}</p>
       </header>
       <div class="search-field big">
         ${icon("search", 18)}
-        <input id="global-search" type="text" placeholder="Search surah or reciter…" autocomplete="off" autofocus />
+        <input id="global-search" type="text" placeholder="${t("sr.placeholder")}" autocomplete="off" autofocus />
         <button class="search-clear" id="global-search-clear" hidden>${icon("x", 15)}</button>
       </div>
       <div id="search-results"></div>
@@ -1321,23 +1377,23 @@ function screenSearch() {
 function searchResults(q) {
   const needle = q.trim().toLowerCase();
   if (!needle) {
-    return `<div class="empty">Type to search across surahs and reciters.</div>`;
+    return `<div class="empty">${t("sr.hint")}</div>`;
   }
   const recs = RECITERS.filter((r) => r.name.toLowerCase().includes(needle) || r.nameAr.includes(q.trim()) || r.country.toLowerCase().includes(needle));
   const surahs = getSurahs().filter((s) => s.name.toLowerCase().includes(needle) || s.nameAr.includes(q.trim()) || s.transName.toLowerCase().includes(needle));
   let html = "";
   if (recs.length) {
-    html += `<section class="home-section"><div class="section-head"><h2>Reciters</h2></div><div class="reciter-scroll">` +
-      recs.map((r) => `<button class="reciter-card" data-act="nav" data-nav="reciter/${r.id}">${avatarImg(r, 80)}<span class="reciter-card-name">${esc(r.name)}</span><span class="reciter-card-sub">${esc(r.country)}</span></button>`).join("") +
+    html += `<section class="home-section"><div class="section-head"><h2>${t("fav.reciters")}</h2></div><div class="reciter-scroll">` +
+      recs.map((r) => `<button class="reciter-card" data-act="nav" data-nav="reciter/${r.id}">${avatarImg(r, 80)}<span class="reciter-card-name">${esc(recName(r))}</span><span class="reciter-card-sub">${getLang() === "ar" ? esc(r.countryAr || "") : esc(r.country)}</span></button>`).join("") +
       `</div></section>`;
   }
   if (surahs.length) {
     const rid = App.defaultReciterId();
-    html += `<section class="home-section"><div class="section-head"><h2>Surahs</h2><span class="page-sub">Played by ${esc(getReciter(rid)?.name || "")}</span></div><div class="surah-chips">` +
+    html += `<section class="home-section"><div class="section-head"><h2>${t("fav.surahs")}</h2><span class="page-sub">${t("sr.playedBy", { name: esc(getReciter(rid)?.name || "") })}</span></div><div class="surah-chips">` +
       surahs.map((s) => `<button class="chip-card" data-act="play-surah" data-rid="${rid}" data-sid="${s.id}"><span class="chip-num">${s.id}</span><span class="chip-name">${esc(s.name)}</span><span class="chip-ar" dir="rtl">${s.nameAr}</span></button>`).join("") +
       `</div></section>`;
   }
-  if (!html) html = `<div class="empty">No results for “${esc(q)}”.</div>`;
+  if (!html) html = `<div class="empty">${t("sr.none", { q: esc(q) })}</div>`;
   return html;
 }
 
@@ -1360,13 +1416,13 @@ function screenPlaylists() {
   return `
     <div class="screen">
       <header class="page-head">
-        <h1 class="page-title">Playlists</h1>
-        <p class="page-sub">Curate your listening</p>
+        <h1 class="page-title">${t("pls.title")}</h1>
+        <p class="page-sub">${t("pls.sub")}</p>
       </header>
       <div class="playlists-grid">
         <button class="playlist-card new" data-act="new-playlist">
           <span class="pl-plus">${icon("plus", 22)}</span>
-          <span class="pl-name">New playlist</span>
+          <span class="pl-name">${t("pls.new")}</span>
         </button>
         ${playlists.map((p, i) => {
           const firsts = p.tracks.slice(0, 2).map((t) => getReciter(t.reciterId));
@@ -1375,7 +1431,7 @@ function screenPlaylists() {
           <button class="playlist-card" data-act="nav" data-nav="playlist/${encodeURIComponent(p.id)}">
             <div class="pl-art">${arts}</div>
             <span class="pl-name">${esc(p.name)}</span>
-            <span class="pl-sub">${p.tracks.length} track${p.tracks.length === 1 ? "" : "s"}</span>
+            <span class="pl-sub">${t(p.tracks.length === 1 ? "pls.track" : "pls.tracks", { n: p.tracks.length })}</span>
           </button>`;
         }).join("")}
       </div>
@@ -1385,7 +1441,7 @@ function screenPlaylists() {
 function screenPlaylistDetail(id) {
   const playlists = Store.get("playlists", []);
   const idx = playlists.findIndex((p) => p.id === id);
-  if (idx < 0) return `<div class="screen"><div class="empty">Playlist not found.</div></div>`;
+  if (idx < 0) return `<div class="screen"><div class="empty">${t("pls.notFound")}</div></div>`;
   const p = playlists[idx];
   const tracks = p.tracks.map((t, ti) => {
     const tr = buildTrack(t.reciterId, t.surahId);
@@ -1400,11 +1456,11 @@ function screenPlaylistDetail(id) {
         <div class="pl-detail-art">${tracks.length ? tracks.slice(0, 2).map((x) => avatarImg(x.rec, 72)).join("") : `<div class="pl-art-empty">${icon("music", 28)}</div>`}</div>
         <div class="pl-detail-meta">
           <h1 class="profile-name">${esc(p.name)}</h1>
-          <p class="page-sub">${p.tracks.length} track${p.tracks.length === 1 ? "" : "s"} · created ${new Date(p.createdAt).toLocaleDateString()}</p>
+          <p class="page-sub">${t(p.tracks.length === 1 ? "pls.track" : "pls.tracks", { n: p.tracks.length })} · ${t("pls.created", { d: new Date(p.createdAt).toLocaleDateString() })}</p>
           <div class="profile-actions">
-            <button class="pill pill-primary" data-act="playlist-play" data-idx="${idx}">${icon("play", 16)}<span>Play all</span></button>
-            <button class="pill" data-act="playlist-play-shuffle" data-idx="${idx}">${icon("shuffle", 16)}<span>Shuffle</span></button>
-            <button class="pill danger-ghost" data-act="playlist-delete" data-idx="${idx}">${icon("trash", 16)}<span>Delete</span></button>
+            <button class="pill pill-primary" data-act="playlist-play" data-idx="${idx}">${icon("play", 16)}<span>${t("pls.playAll")}</span></button>
+            <button class="pill" data-act="playlist-play-shuffle" data-idx="${idx}">${icon("shuffle", 16)}<span>${t("rec.shuffle")}</span></button>
+            <button class="pill danger-ghost" data-act="playlist-delete" data-idx="${idx}">${icon("trash", 16)}<span>${t("pls.delete")}</span></button>
           </div>
         </div>
       </header>
@@ -1412,23 +1468,23 @@ function screenPlaylistDetail(id) {
         ${tracks.length ? tracks.map(({ tr, rec, ti }) => `
           <div class="surah-row" data-act="play-surah" data-rid="${tr.reciterId}" data-sid="${tr.surahId}" role="button" tabindex="0">
             ${avatarImg(rec, 40)}
-            <span class="surah-names"><span class="surah-en">${esc(tr.surahName)}</span><span class="surah-sub">${esc(tr.reciterName)}</span></span>
+            <span class="surah-names"><span class="surah-en">${esc(tr.surahName)}</span><span class="surah-sub">${esc(recName(getReciter(tr.reciterId)))}</span></span>
             <span class="surah-ar" dir="rtl">${tr.surahNameAr}</span>
             <span class="surah-actions" >
               <button class="icon-btn" data-act="playlist-remove" data-pl="${idx}" data-ti="${ti}" title="Remove">${icon("x", 17)}</button>
             </span>
-          </div>`).join("") : `<div class="empty">Empty playlist — use the “+” on any surah to add it here.</div>`}
+          </div>`).join("") : `<div class="empty">${t("pls.empty")}</div>`}
       </div>
     </div>`;
 }
 
 function newPlaylistSheet() {
   openSheet({
-    title: "New playlist",
+    title: t("sh.newPlaylist"),
     body: `
-      <div class="search-field"><input id="newpl-name" type="text" placeholder="Playlist name" maxlength="40" /></div>
+      <div class="search-field"><input id="newpl-name" type="text" placeholder="${t("sh.playlistName")}" maxlength="40" /></div>
       <div class="sheet-actions">
-        <button class="pill pill-primary" data-act="create-playlist">${icon("plus", 16)}<span>Create</span></button>
+        <button class="pill pill-primary" data-act="create-playlist">${icon("plus", 16)}<span>${t("sh.create")}</span></button>
       </div>`,
     onMount(el) {
       setTimeout(() => { const i = el.querySelector("#newpl-name"); if (i) i.focus(); }, 80);
@@ -1447,22 +1503,22 @@ function screenFavorites() {
   const rid = App.defaultReciterId();
   return `
     <div class="screen">
-      <header class="page-head"><h1 class="page-title">Favorites</h1><p class="page-sub">Your collection</p></header>
-      ${reciters.length ? `<section class="home-section"><div class="section-head"><h2>Reciters</h2></div><div class="reciter-scroll">` +
-        reciters.map((r) => `<button class="reciter-card" data-act="nav" data-nav="reciter/${r.id}">${avatarImg(r, 84)}<span class="reciter-card-name">${esc(r.name)}</span><span class="reciter-card-sub">${esc(r.country)}</span></button>`).join("") +
+      <header class="page-head"><h1 class="page-title">${t("fav.title")}</h1><p class="page-sub">${t("fav.sub")}</p></header>
+      ${reciters.length ? `<section class="home-section"><div class="section-head"><h2>${t("fav.reciters")}</h2></div><div class="reciter-scroll">` +
+        reciters.map((r) => `<button class="reciter-card" data-act="nav" data-nav="reciter/${r.id}">${avatarImg(r, 84)}<span class="reciter-card-name">${esc(recName(r))}</span><span class="reciter-card-sub">${getLang() === "ar" ? esc(r.countryAr || "") : esc(r.country)}</span></button>`).join("") +
         `</div></section>` : ""}
-      ${surahs.length ? `<section class="home-section"><div class="section-head"><h2>Surahs</h2><span class="page-sub">Played by ${esc(getReciter(rid)?.name || "")}</span></div><div class="surah-list">` +
+      ${surahs.length ? `<section class="home-section"><div class="section-head"><h2>${t("fav.surahs")}</h2><span class="page-sub">${t("sr.playedBy", { name: esc(getReciter(rid)?.name || "") })}</span></div><div class="surah-list">` +
         surahs.map((s) => `
           <div class="surah-row" data-act="play-surah" data-rid="${rid}" data-sid="${s.id}" role="button" tabindex="0">
             <span class="surah-badge">${s.id}</span>
-            <span class="surah-names"><span class="surah-en">${esc(s.name)}</span><span class="surah-sub">${s.place === "makkah" ? "Makki" : "Madani"} · ${s.ayahs} verses</span></span>
+            <span class="surah-names"><span class="surah-en">${esc(s.name)}</span><span class="surah-sub">${t(s.place === "makkah" ? "rec.makki" : "rec.madani")} · ${t("rec.verses", { n: s.ayahs })}</span></span>
             <span class="surah-ar" dir="rtl">${s.nameAr}</span>
             <span class="surah-actions" >
               <button class="icon-btn" data-act="read-surah" data-rid="${rid}" data-sid="${s.id}" title="Read">${icon("book", 18)}</button>
               <button class="icon-btn" data-act="menu-fav" data-sid="${s.id}" title="Remove">${icon("heart", 18)}</button>
             </span>
           </div>`).join("") + `</div></section>` : ""}
-      ${!reciters.length && !surahs.length ? `<div class="empty">${icon("heart", 30)}<span>Tap the heart anywhere to build your collection.</span></div>` : ""}
+      ${!reciters.length && !surahs.length ? `<div class="empty">${icon("heart", 30)}<span>${t("fav.empty")}</span></div>` : ""}
     </div>`;
 }
 
@@ -1480,54 +1536,65 @@ function screenSettings() {
   const amb = App.ambient;
   return `
     <div class="screen settings">
-      <header class="page-head"><h1 class="page-title">Settings</h1><p class="page-sub">Tune the experience</p></header>
+      <header class="page-head"><h1 class="page-title">${t("set.title")}</h1><p class="page-sub">${t("set.sub")}</p></header>
 
       <section class="settings-section">
-        <h3>Playback</h3>
+        <h3>${t("set.language")}</h3>
         <div class="setting-row">
-          <div class="setting-label">${icon("speed", 18)}<div><div class="sl-name">Default speed</div><div class="sl-sub">Applied to new playback</div></div></div>
+          <div class="setting-label">${icon("info", 18)}<div><div class="sl-name">${t("set.language")}</div><div class="sl-sub">${t("set.langSub")}</div></div></div>
+          <div class="seg">
+            <button class="seg-btn ${getLang() === "en" ? "on" : ""}" data-act="lang-set" data-lang="en">English</button>
+            <button class="seg-btn ${getLang() === "ar" ? "on" : ""}" data-act="lang-set" data-lang="ar">العربية</button>
+          </div>
+        </div>
+      </section>
+
+      <section class="settings-section">
+        <h3>${t("set.playback")}</h3>
+        <div class="setting-row">
+          <div class="setting-label">${icon("speed", 18)}<div><div class="sl-name">${t("set.speed")}</div><div class="sl-sub">${t("set.speedSub")}</div></div></div>
           <div class="seg" data-key="speed">
             ${[0.75, 1, 1.25, 1.5, 2].map((v) => `<button class="seg-btn ${s.speed === v ? "on" : ""}" data-act="speed-set" data-v="${v}">${v}x</button>`).join("")}
           </div>
         </div>
         <div class="setting-row">
-          <div class="setting-label">${icon("next", 18)}<div><div class="sl-name">Auto-advance</div><div class="sl-sub">Continue to the next surah in the queue</div></div></div>
+          <div class="setting-label">${icon("next", 18)}<div><div class="sl-name">${t("set.autoAdvance")}</div><div class="sl-sub">${t("set.autoAdvanceSub")}</div></div></div>
           <label class="switch"><input type="checkbox" data-act="toggle-setting" data-key="autoAdvance" ${s.autoAdvance ? "checked" : ""} /><span class="track"></span></label>
         </div>
       </section>
 
       <section class="settings-section">
-        <h3>Reading</h3>
+        <h3>${t("set.reading")}</h3>
         <div class="setting-row">
-          <div class="setting-label">${icon("book", 18)}<div><div class="sl-name">Arabic text size</div><div class="sl-sub" id="fsize-label">${s.arabicFontSize}px</div></div></div>
+          <div class="setting-label">${icon("book", 18)}<div><div class="sl-name">${t("set.fontSize")}</div><div class="sl-sub" id="fsize-label">${s.arabicFontSize}px</div></div></div>
           <input type="range" class="slider" min="22" max="44" step="1" value="${s.arabicFontSize}" data-act="fsize" style="--fill:${((s.arabicFontSize - 22) / 22) * 100}%" />
         </div>
         <div class="setting-row">
-          <div class="setting-label">${icon("book", 18)}<div><div class="sl-name">English translation</div><div class="sl-sub">Show Saheeh International below each verse</div></div></div>
+          <div class="setting-label">${icon("book", 18)}<div><div class="sl-name">${t("set.translation")}</div><div class="sl-sub">${t("set.translationSub")}</div></div></div>
           <label class="switch"><input type="checkbox" data-act="toggle-setting" data-key="showTranslation" ${s.showTranslation ? "checked" : ""} /><span class="track"></span></label>
         </div>
         <div class="setting-row">
-          <div class="setting-label">${icon("info", 18)}<div><div class="sl-name">Verse numbers</div><div class="sl-sub">Show the numbered badge on each verse</div></div></div>
+          <div class="setting-label">${icon("info", 18)}<div><div class="sl-name">${t("set.verseNumbers")}</div><div class="sl-sub">${t("set.verseNumbersSub")}</div></div></div>
           <label class="switch"><input type="checkbox" data-act="toggle-setting" data-key="showVerseNumbers" ${s.showVerseNumbers ? "checked" : ""} /><span class="track"></span></label>
         </div>
       </section>
 
       <section class="settings-section">
-        <h3>Audio</h3>
+        <h3>${t("set.audio")}</h3>
         <div class="setting-row">
-          <div class="setting-label">${icon("volume", 18)}<div><div class="sl-name">Quran volume</div><div class="sl-sub">Independent from background sound</div></div></div>
+          <div class="setting-label">${icon("volume", 18)}<div><div class="sl-name">${t("set.quranVol")}</div><div class="sl-sub">${t("set.quranVolSub")}</div></div></div>
           <input type="range" class="slider" min="0" max="1" step="0.01" value="${App.engine.audio.volume}" data-act="qvol" style="--fill:${App.engine.audio.volume * 100}%" />
         </div>
         <div class="setting-row">
-          <div class="setting-label">${icon("droplet", 18)}<div><div class="sl-name">Background volume</div><div class="sl-sub">Ambient layer level</div></div></div>
+          <div class="setting-label">${icon("droplet", 18)}<div><div class="sl-name">${t("set.bgVol")}</div><div class="sl-sub">${t("set.bgVolSub")}</div></div></div>
           <input type="range" class="slider" min="0" max="1" step="0.01" value="${amb.volume}" data-act="bvol" style="--fill:${amb.volume * 100}%" />
         </div>
       </section>
 
       <section class="settings-section">
-        <h3>Appearance</h3>
+        <h3>${t("set.appearance")}</h3>
         <div class="setting-row">
-          <div class="setting-label">${icon("droplet", 18)}<div><div class="sl-name">Accent</div><div class="sl-sub">A subtle tint for active elements</div></div></div>
+          <div class="setting-label">${icon("droplet", 18)}<div><div class="sl-name">${t("set.accent")}</div><div class="sl-sub">${t("set.accentSub")}</div></div></div>
           <div class="accent-row">
             ${accents.map((a) => `<button class="accent-dot ${s.accent === a.id ? "on" : ""}" data-act="accent-set" data-accent="${a.id}" style="--c:${a.c}" title="${a.name}" aria-label="${a.name}"></button>`).join("")}
           </div>
@@ -1535,22 +1602,22 @@ function screenSettings() {
       </section>
 
       <section class="settings-section">
-        <h3>Data</h3>
+        <h3>${t("set.data")}</h3>
         <div class="about-card glass">
-          <div class="about-title">${APP_NAME} — sources & credits</div>
+          <div class="about-title">${t("set.aboutTitle")}</div>
           <ul class="about-list">
-            <li>Quran text — Tanzil Uthmani Hafs (via the open quran-api mirror)</li>
-            <li>Translation — Saheeh International (via Quran.com API)</li>
-            <li>Recitations — mp3quran.net & quranicaudio.com public audio</li>
-            <li>Reciter photos — Quran.com official profiles · Wikimedia · Assabile</li>
-            <li>Audio maps strictly by surah ID; every track is validated before playback</li>
+            <li>${t("set.about1")}</li>
+            <li>${t("set.about2")}</li>
+            <li>${t("set.about3")}</li>
+            <li>${t("set.about4")}</li>
+            <li>${t("set.about5")}</li>
           </ul>
         </div>
         <div class="setting-row">
-          <div class="setting-label">${icon("trash", 18)}<div><div class="sl-name">Clear local data</div><div class="sl-sub">Favorites, playlists and settings on this device</div></div></div>
-          <button class="pill danger-ghost" data-act="clear-data">${icon("trash", 16)}<span>Clear</span></button>
+          <div class="setting-label">${icon("trash", 18)}<div><div class="sl-name">${t("set.clear")}</div><div class="sl-sub">${t("set.clearSub")}</div></div></div>
+          <button class="pill danger-ghost" data-act="clear-data">${icon("trash", 16)}<span>${t("set.clearBtn")}</span></button>
         </div>
-        <p class="version">${APP_NAME} v1.0 — built for calm listening</p>
+        <p class="version">${t("set.version")}</p>
       </section>
     </div>`;
 }
@@ -1558,6 +1625,10 @@ function screenSettings() {
 function bindSettings() {}
 
 /* ============================ favorites helpers ============================ */
+
+export function recName(r) { return getLang() === "ar" && r?.nameAr ? r.nameAr : (r?.name || ""); }
+export function recLoc(r) { return getLang() === "ar" ? (r?.cityAr || r?.city || "") + " · " + (r?.countryAr || r?.country || "") : (r?.city || "") + " · " + (r?.country || ""); }
+export function recBio(r) { return getLang() === "ar" ? (r?.bioAr || r?.bio || "") : (r?.bio || ""); }
 
 export function isFavSurah(id) {
   return Store.get("favorites", { reciters: [], surahs: [] }).surahs.includes(id);
@@ -1581,32 +1652,32 @@ export function toggleFavReciter(id) {
 let _downloading = new Set();
 
 async function downloadOffline(reciterId, surahId) {
-  const t = buildTrack(reciterId, surahId);
-  if (!t) return toast("Recording unavailable", "err");
-  if (!isOfflineSupported()) return toast("This browser does not support offline storage", "err");
+  const tr = buildTrack(reciterId, surahId);
+  if (!tr) return toast(t("toast.recUnavailable"), "err");
+  if (!isOfflineSupported()) return toast(t("toast.noOfflineSupport"), "err");
   const key = `${reciterId}:${surahId}`;
   if (_downloading.has(key)) return;
   const existing = await OfflineStore.get(reciterId, surahId);
   if (existing) {
     await OfflineStore.remove(reciterId, surahId);
-    toast(`Removed ${t.surahName} from offline`, "info");
+    toast(t("toast.downloadRemoved", { name: tr.surahName }), "info");
     render();
     return;
   }
   _downloading.add(key);
-  toast(`Downloading ${t.surahName}… 0%`, "info");
-  const okSaved = await OfflineStore.downloadTrack(t, (p) => {
+  toast(t("toast.downloadStart", { name: tr.surahName }), "info");
+  const okSaved = await OfflineStore.downloadTrack(tr, (p) => {
     const pct = Math.round(p * 100);
     const toasts = document.querySelectorAll(".toast");
     const el = toasts[toasts.length - 1]?.querySelector("div");
-    if (el) el.textContent = `Downloading ${t.surahName}… ${pct}%`;
+    if (el) el.textContent = t("toast.downloadProgress", { name: tr.surahName, p: pct });
   });
   _downloading.delete(key);
   if (okSaved) {
-    toast(`${t.surahName} saved — plays offline`);
+    toast(t("toast.downloadSaved", { name: tr.surahName }));
     render();
   } else {
-    toast("Download failed — check connection", "err");
+    toast(t("toast.downloadFail"), "err");
   }
 }
 
