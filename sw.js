@@ -5,7 +5,7 @@
    - Never intercepts cross-origin audio (pass-through)
    ============================================================ */
 
-const CACHE = "sakina-v1.8";
+const CACHE = "sakina-v1.10";
 
 const SHELL = [
   "./",
@@ -99,7 +99,26 @@ self.addEventListener("fetch", (ev) => {
     return;
   }
 
-  // static assets: stale-while-revalidate
+  // static assets: code files (.js/.css/.mjs) are network-first so fixes
+  // reach the tablet immediately; everything else (images/fonts/audio)
+  // stays stale-while-revalidate since it rarely changes.
+  const isCodeFile = /\.(js|css|mjs)$/.test(url.pathname);
+
+  if (isCodeFile) {
+    ev.respondWith(
+      fetch(req)
+        .then((res) => {
+          if (res.ok) {
+            const copy = res.clone();
+            caches.open(CACHE).then((c) => c.put(req, copy)).catch(() => {});
+          }
+          return res;
+        })
+        .catch(() => caches.match(req))
+    );
+    return;
+  }
+
   ev.respondWith(
     caches.match(req).then((cached) => {
       const fetchPromise = fetch(req)

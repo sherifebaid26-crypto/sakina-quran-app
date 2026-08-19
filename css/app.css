@@ -419,6 +419,13 @@ svg.ic { flex: none; display: block; }
 }
 .surah-row:hover { background: rgba(255, 255, 255, 0.06); border-color: var(--border); transform: translateY(-1px); box-shadow: 0 8px 26px rgba(0, 0, 0, 0.25); }
 .surah-row:active { transform: scale(0.996); }
+.surah-row.dl-active { position: relative; overflow: hidden; cursor: default; }
+.surah-row.dl-active:hover { transform: none; box-shadow: none; }
+.dl-row-progress {
+  position: absolute; left: 0; bottom: 0; height: 2px; width: 0;
+  background: linear-gradient(90deg, var(--accent), rgba(143, 179, 255, 0.3));
+  transition: width 0.25s linear;
+}
 .surah-badge {
   width: 38px; height: 38px; border-radius: 50%; flex: none;
   display: grid; place-items: center;

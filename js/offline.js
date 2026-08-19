@@ -81,30 +81,53 @@ export const OfflineStore = {
     } catch { return 0; }
   },
 
-  /** Download a track's audio to the store. Returns true on success. */
-  async downloadTrack(track, onProgress) {
+  /**
+   * Download a track's audio to the store. Returns true on success, false on
+   * failure OR cancellation.
+   * opts.signal — an external AbortSignal (e.g. from a "cancel" button).
+   * opts.stallTimeoutMs — if no new data arrives for this long, the download
+   *   is aborted automatically so it can never hang forever on a bad connection.
+   */
+  async downloadTrack(track, onProgress, opts = {}) {
+    const { signal, stallTimeoutMs = 25000 } = opts;
+    const controller = new AbortController();
+    const onExternalAbort = () => controller.abort();
+    if (signal) {
+      if (signal.aborted) controller.abort();
+      else signal.addEventListener("abort", onExternalAbort);
+    }
+    let stallTimer = null;
+    const armStallTimer = () => {
+      clearTimeout(stallTimer);
+      stallTimer = setTimeout(() => controller.abort(), stallTimeoutMs);
+    };
     try {
-      const res = await fetch(track.audioUrl);
+      armStallTimer(); // guards the initial connection too
+      const res = await fetch(track.audioUrl, { signal: controller.signal });
       if (!res.ok) throw new Error("http " + res.status);
       const total = Number(res.headers.get("Content-Length")) || 0;
       if (!res.body) {
         const blob = await res.blob();
+        clearTimeout(stallTimer);
         return await this.save(track.reciterId, track.surahId, blob, {
           reciterName: track.reciterName,
           surahName: track.surahName,
         });
       }
-      // stream with progress
+      // stream with progress — the stall timer resets on every chunk, so a
+      // slow-but-moving connection is fine; only a truly frozen one gets cut.
       const reader = res.body.getReader();
       const chunks = [];
       let received = 0;
       while (true) {
+        armStallTimer();
         const { done, value } = await reader.read();
         if (done) break;
         chunks.push(value);
         received += value.length;
         if (onProgress && total) onProgress(received / total);
       }
+      clearTimeout(stallTimer);
       const blob = new Blob(chunks, { type: "audio/mpeg" });
       return await this.save(track.reciterId, track.surahId, blob, {
         reciterName: track.reciterName,
@@ -113,6 +136,9 @@ export const OfflineStore = {
     } catch (e) {
       console.error("[offline] download failed", e);
       return false;
+    } finally {
+      clearTimeout(stallTimer);
+      if (signal) signal.removeEventListener("abort", onExternalAbort);
     }
   },
 

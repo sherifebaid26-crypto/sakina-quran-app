@@ -105,6 +105,7 @@ export const App = {
   timingsCache: new Map(),
   activeVerse: 0,
   readingSurahId: null,
+  playlistsTab: "mine",
   versesOpen: false,
   versesShowTranslation: true,
   defaultReciterId: () => {
@@ -875,6 +876,11 @@ const Actions = {
     toast(t("pls.deleted"));
     navigate("playlists");
   },
+  "playlists-tab"(el) {
+    App.playlistsTab = el.dataset.tab;
+    render();
+  },
+  "cancel-download"(el) { cancelDownload(el.dataset.dlkey); },
   "new-playlist"() { newPlaylistSheet(); },
   "create-playlist"() {
     const input = $("#newpl-name");
@@ -1226,10 +1232,10 @@ function readingPlayerHTML() {
     <div class="rp-head">
       ${tr ? avatarImg(reciter, 64) : `<div class="avatar avatar-placeholder" style="width:64px;height:64px"><span>${icon("music", 22)}</span></div>`}
       <div class="rp-meta">
-        <div class="rp-title">${t ? esc(t.surahName) : esc(t("pl.nothing"))}</div>
-        <div class="rp-sub">${t ? esc(recName(getReciter(t.reciterId))) : t("pl.choose")}</div>
+        <div class="rp-title">${tr ? esc(tr.surahName) : esc(t("pl.nothing"))}</div>
+        <div class="rp-sub">${tr ? esc(recName(getReciter(tr.reciterId))) : t("pl.choose")}</div>
       </div>
-      <button class="icon-btn heart ${isFavSurah(t?.surahId) ? "on" : ""}" data-act="fav-track" title="${t("fav.added")}">${icon("heart", 19)}</button>
+      <button class="icon-btn heart ${isFavSurah(tr?.surahId) ? "on" : ""}" data-act="fav-track" title="${t("fav.added")}">${icon("heart", 19)}</button>
     </div>
     <div class="rp-controls">
       <button class="ctl-pill" data-act="speed-cycle">${icon("speed", 15)}<span>${st.speed}x</span></button>
@@ -1412,6 +1418,7 @@ function bindSearch() {
 
 /* ---------- PLAYLISTS ---------- */
 function screenPlaylists() {
+  const tab = App.playlistsTab || "mine";
   const playlists = Store.get("playlists", []);
   return `
     <div class="screen">
@@ -1419,6 +1426,11 @@ function screenPlaylists() {
         <h1 class="page-title">${t("pls.title")}</h1>
         <p class="page-sub">${t("pls.sub")}</p>
       </header>
+      <div class="seg" style="margin-bottom:20px">
+        <button class="seg-btn ${tab === "mine" ? "on" : ""}" data-act="playlists-tab" data-tab="mine">${t("pls.tabMine")}</button>
+        <button class="seg-btn ${tab === "downloads" ? "on" : ""}" data-act="playlists-tab" data-tab="downloads">${t("pls.tabDownloads")}</button>
+      </div>
+      ${tab === "mine" ? `
       <div class="playlists-grid">
         <button class="playlist-card new" data-act="new-playlist">
           <span class="pl-plus">${icon("plus", 22)}</span>
@@ -1434,7 +1446,10 @@ function screenPlaylists() {
             <span class="pl-sub">${t(p.tracks.length === 1 ? "pls.track" : "pls.tracks", { n: p.tracks.length })}</span>
           </button>`;
         }).join("")}
-      </div>
+      </div>` : `
+      <div class="surah-list" id="downloads-list">
+        <div class="empty-inline">${icon("spinner", 20)}</div>
+      </div>`}
     </div>`;
 }
 
@@ -1492,7 +1507,9 @@ function newPlaylistSheet() {
   });
 }
 
-function bindPlaylists() {}
+function bindPlaylists() {
+  if ((App.playlistsTab || "mine") === "downloads") renderDownloadsPanel();
+}
 function bindPlaylistDetail() {}
 
 /* ---------- FAVORITES ---------- */
@@ -1649,14 +1666,15 @@ export function toggleFavReciter(id) {
 
 /* ============================ download ============================ */
 
-let _downloading = new Set();
+// key `${reciterId}:${surahId}` → { pct, controller, cancelled, name, reciterName }
+const _downloads = new Map();
 
 async function downloadOffline(reciterId, surahId) {
   const tr = buildTrack(reciterId, surahId);
   if (!tr) return toast(t("toast.recUnavailable"), "err");
   if (!isOfflineSupported()) return toast(t("toast.noOfflineSupport"), "err");
   const key = `${reciterId}:${surahId}`;
-  if (_downloading.has(key)) return;
+  if (_downloads.has(key)) return; // already in progress — do nothing (row shows live status)
   const existing = await OfflineStore.get(reciterId, surahId);
   if (existing) {
     await OfflineStore.remove(reciterId, surahId);
@@ -1664,21 +1682,116 @@ async function downloadOffline(reciterId, surahId) {
     render();
     return;
   }
-  _downloading.add(key);
-  toast(t("toast.downloadStart", { name: tr.surahName }), "info");
-  const okSaved = await OfflineStore.downloadTrack(tr, (p) => {
-    const pct = Math.round(p * 100);
-    const toasts = document.querySelectorAll(".toast");
-    const el = toasts[toasts.length - 1]?.querySelector("div");
-    if (el) el.textContent = t("toast.downloadProgress", { name: tr.surahName, p: pct });
+
+  const controller = new AbortController();
+  _downloads.set(key, {
+    pct: 0, controller, cancelled: false,
+    name: tr.surahName, reciterName: recName(getReciter(reciterId)),
   });
-  _downloading.delete(key);
-  if (okSaved) {
-    toast(t("toast.downloadSaved", { name: tr.surahName }));
-    render();
-  } else {
-    toast(t("toast.downloadFail"), "err");
+  refreshDownloadsPanel();
+  toast(t("toast.downloadStart", { name: tr.surahName }), "info");
+
+  try {
+    const okSaved = await OfflineStore.downloadTrack(tr, (p) => {
+      const d = _downloads.get(key);
+      if (d) d.pct = p;
+      updateDownloadRowProgress(key, p);
+    }, { signal: controller.signal });
+
+    const wasCancelled = _downloads.get(key)?.cancelled;
+    if (okSaved) {
+      toast(t("toast.downloadSaved", { name: tr.surahName }));
+    } else if (wasCancelled) {
+      toast(t("toast.downloadCancelled", { name: tr.surahName }), "info");
+    } else {
+      toast(t("toast.downloadFail"), "err");
+    }
+  } finally {
+    // guaranteed cleanup — the key can never stay stuck as "downloading"
+    // even if something above throws unexpectedly.
+    _downloads.delete(key);
+    refreshDownloadsPanel();
+    if (App.route.name === "reciter") decorateOfflineRows($("#surah-list"));
   }
+}
+
+export function cancelDownload(key) {
+  const d = _downloads.get(key);
+  if (!d) return;
+  d.cancelled = true;
+  d.controller.abort();
+}
+
+function updateDownloadRowProgress(key, p) {
+  const pct = Math.round(p * 100);
+  const row = document.querySelector(`[data-dlkey="${key}"]`);
+  if (!row) return;
+  const bar = row.querySelector(".dl-row-progress");
+  if (bar) bar.style.width = pct + "%";
+  const label = row.querySelector(".dl-pct");
+  if (label) label.textContent = t("pls.downloading", { p: pct });
+}
+
+/** re-render the Downloads tab in place, if it's the one currently on screen */
+function refreshDownloadsPanel() {
+  if (App.route.name === "playlists" && (App.playlistsTab || "mine") === "downloads") {
+    renderDownloadsPanel();
+  }
+}
+
+function fmtSize(bytes) {
+  if (!bytes) return "";
+  const mb = bytes / (1024 * 1024);
+  if (mb >= 1) return mb.toFixed(1) + " MB";
+  return Math.max(1, Math.round(bytes / 1024)) + " KB";
+}
+
+async function renderDownloadsPanel() {
+  const host = $("#downloads-list");
+  if (!host) return;
+  const stored = await OfflineStore.list();
+  const active = [..._downloads.entries()];
+
+  if (!active.length && !stored.length) {
+    host.innerHTML = `<div class="empty">${t("pls.noDownloads")}</div>`;
+    return;
+  }
+
+  const activeRows = active.map(([key, d]) => {
+    const pct = Math.round(d.pct * 100);
+    return `
+    <div class="surah-row dl-active" data-dlkey="${key}">
+      <div class="dl-row-progress" style="width:${pct}%"></div>
+      <span class="surah-badge">${icon("download", 16)}</span>
+      <span class="surah-names">
+        <span class="surah-en">${esc(d.name)}</span>
+        <span class="surah-sub dl-pct">${t("pls.downloading", { p: pct })} · ${esc(d.reciterName)}</span>
+      </span>
+      <span class="surah-actions">
+        <button class="icon-btn" data-act="cancel-download" data-dlkey="${key}" title="${t("pls.cancel")}">${icon("x", 17)}</button>
+      </span>
+    </div>`;
+  }).join("");
+
+  const doneRows = stored
+    .filter((s) => !_downloads.has(s.key))
+    .sort((a, b) => (b.savedAt || 0) - (a.savedAt || 0))
+    .map((s) => {
+      const [rid, sid] = s.key.split(":");
+      return `
+      <div class="surah-row" data-act="play-surah" data-rid="${rid}" data-sid="${sid}" role="button" tabindex="0">
+        <span class="surah-badge">${icon("music", 16)}</span>
+        <span class="surah-names">
+          <span class="surah-en">${esc(s.meta?.surahName || "")}</span>
+          <span class="surah-sub">${esc(s.meta?.reciterName || "")} · ${fmtSize(s.blob?.size)}</span>
+        </span>
+        <span class="surah-actions">
+          <button class="icon-btn" data-act="download" data-rid="${rid}" data-sid="${sid}" title="${t("pls.removeDownload")}">${icon("trash", 17)}</button>
+        </span>
+      </div>`;
+    }).join("");
+
+  host.innerHTML = activeRows + doneRows;
 }
 
 function isOfflineSupported() {
